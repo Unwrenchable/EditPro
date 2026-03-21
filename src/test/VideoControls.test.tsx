@@ -14,6 +14,11 @@ describe('VideoControls', () => {
     onVolumeChange: vi.fn(),
     onToggleMute: vi.fn(),
     onPlaybackRateChange: vi.fn(),
+    onStepBack: vi.fn(),
+    onStepForward: vi.fn(),
+    onSkipBack: vi.fn(),
+    onSkipForward: vi.fn(),
+    onAddMarker: vi.fn(),
   };
 
   it('shows play icon when not playing', () => {
@@ -52,5 +57,19 @@ describe('VideoControls', () => {
       target: { value: '2' },
     });
     expect(onPlaybackRateChange).toHaveBeenCalledWith(2);
+  });
+
+  it('calls onAddMarker when mark button is clicked', () => {
+    const onAddMarker = vi.fn();
+    render(<VideoControls {...baseProps} onAddMarker={onAddMarker} />);
+    fireEvent.click(screen.getByRole('button', { name: /add marker/i }));
+    expect(onAddMarker).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onSkipBack when skip-back button is clicked', () => {
+    const onSkipBack = vi.fn();
+    render(<VideoControls {...baseProps} onSkipBack={onSkipBack} />);
+    fireEvent.click(screen.getByRole('button', { name: /skip back/i }));
+    expect(onSkipBack).toHaveBeenCalledTimes(1);
   });
 });

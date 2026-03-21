@@ -1,75 +1,72 @@
 import React, { useState } from 'react';
+import LumetriColorPanel from './LumetriColorPanel';
+import EssentialSoundPanel from './EssentialSoundPanel';
+import type {
+  LumetriColor, LumetriCurves, AudioTrackSettings, AudioCategory,
+  AutoReframeAspect, VideoExportOptions,
+} from '../../types';
 
-interface SliderRowProps {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange: (value: number) => void;
-  disabled?: boolean;
-}
+type MainPanel = 'lumetri' | 'sound' | 'effects' | 'ai' | 'export';
 
-const SliderRow: React.FC<SliderRowProps> = ({ label, value, min, max, onChange, disabled }) => (
-  <div className="slider-row">
-    <div className="slider-header">
-      <span className="slider-label">{label}</span>
-      <span className="slider-value">{value > 0 ? `+${value}` : value}</span>
-    </div>
-    <input
-      type="range"
-      min={min}
-      max={max}
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className="slider"
-      aria-label={label}
-      disabled={disabled}
-    />
-  </div>
-);
+const MAIN_PANELS: { id: MainPanel; label: string; icon: string }[] = [
+  { id: 'lumetri',  label: 'Color',   icon: '🎨' },
+  { id: 'sound',    label: 'Sound',   icon: '🎙' },
+  { id: 'effects',  label: 'Effects', icon: '✨' },
+  { id: 'ai',       label: 'AI',      icon: '🤖' },
+  { id: 'export',   label: 'Export',  icon: '📤' },
+];
 
-type VideoPanel = 'color' | 'audio' | 'effects' | 'file';
+const EXPORT_PLATFORMS: { id: VideoExportOptions['platform']; label: string; res: VideoExportOptions['resolution']; fps: 24|30|60; format: VideoExportOptions['format'] }[] = [
+  { id: 'youtube',  label: 'YouTube 1080p',   res: '1080p', fps: 30, format: 'mp4'  },
+  { id: 'tiktok',   label: 'TikTok / Reels',  res: '1080p', fps: 30, format: 'mp4'  },
+  { id: 'vimeo',    label: 'Vimeo HD',         res: '1080p', fps: 24, format: 'mp4'  },
+  { id: 'twitter',  label: 'Twitter / X',      res: '720p',  fps: 30, format: 'mp4'  },
+  { id: 'custom',   label: 'Custom',           res: '1080p', fps: 30, format: 'mp4'  },
+];
+
+const TRANSITIONS = ['Cut', 'Fade', 'Dissolve', 'Cross-Fade', 'Wipe', 'Slide', 'Zoom', 'Dip to Black'];
+
+const AUTO_REFRAME_ASPECTS: { value: AutoReframeAspect; label: string }[] = [
+  { value: 'original', label: '16:9 Original' },
+  { value: '9:16',     label: '9:16 Vertical' },
+  { value: '1:1',      label: '1:1 Square'    },
+  { value: '4:5',      label: '4:5 Portrait'  },
+  { value: '4:3',      label: '4:3 Classic'   },
+];
 
 interface VideoAdjustmentPanelProps {
-  brightness: number;
-  contrast: number;
-  saturation: number;
-  temperature: number;
-  highlights: number;
-  shadows: number;
-  onAdjustmentChange: (
-    key: 'brightness' | 'contrast' | 'saturation' | 'temperature' | 'highlights' | 'shadows',
-    value: number
-  ) => void;
-  onOpenVideo: () => void;
+  lumetri: LumetriColor;
+  audio: AudioTrackSettings;
+  autoReframe: AutoReframeAspect;
   videoUrl: string | null;
+  onLumetriBasicChange: (key: keyof Omit<LumetriColor, 'curves' | 'wheels'>, value: number) => void;
+  onCurvesChange: (key: keyof LumetriCurves, value: number) => void;
+  onColorWheelChange: (wheel: 'shadows' | 'midtones' | 'highlights', axis: 'x' | 'y' | 'luminance', value: number) => void;
+  onAudioChange: (key: keyof AudioTrackSettings, value: number | boolean | AudioCategory) => void;
+  onSetAutoReframe: (aspect: AutoReframeAspect) => void;
+  onResetLumetri: () => void;
+  onOpenVideo: () => void;
+  onExport: () => void;
+  onDetectScenes: () => void;
 }
 
 const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
-  brightness,
-  contrast,
-  saturation,
-  temperature,
-  highlights,
-  shadows,
-  onAdjustmentChange,
-  onOpenVideo,
-  videoUrl,
+  lumetri, audio, autoReframe, videoUrl,
+  onLumetriBasicChange, onCurvesChange, onColorWheelChange, onAudioChange,
+  onSetAutoReframe, onResetLumetri, onOpenVideo, onExport, onDetectScenes,
 }) => {
   const disabled = !videoUrl;
-  const [activePanel, setActivePanel] = useState<VideoPanel>('color');
+  const [activePanel, setActivePanel] = useState<MainPanel>('lumetri');
+  const [exportPlatform, setExportPlatform] = useState<VideoExportOptions['platform']>('youtube');
+  const [exportQuality, setExportQuality] = useState(90);
+  const [appliedTransition, setAppliedTransition] = useState<string | null>(null);
 
-  const PANELS: { id: VideoPanel; label: string; icon: string }[] = [
-    { id: 'color', label: 'Color', icon: '🎨' },
-    { id: 'audio', label: 'Audio', icon: '🔊' },
-    { id: 'effects', label: 'Effects', icon: '✨' },
-    { id: 'file', label: 'File', icon: '📁' },
-  ];
+  const selectedPlatformDef = EXPORT_PLATFORMS.find((p) => p.id === exportPlatform)!;
 
   return (
     <aside className="right-panel">
       <div className="panel-tabs">
-        {PANELS.map((p) => (
+        {MAIN_PANELS.map((p) => (
           <button
             key={p.id}
             className={`panel-tab ${activePanel === p.id ? 'active' : ''}`}
@@ -82,80 +79,135 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
         ))}
       </div>
 
-      {activePanel === 'color' && (
-        <div className="panel-body">
-          <p className="section-subtitle">Color Grading</p>
-          <SliderRow label="Brightness" value={brightness} min={-100} max={100}
-            onChange={(v) => onAdjustmentChange('brightness', v)} disabled={disabled} />
-          <SliderRow label="Contrast" value={contrast} min={-100} max={100}
-            onChange={(v) => onAdjustmentChange('contrast', v)} disabled={disabled} />
-          <SliderRow label="Saturation" value={saturation} min={-100} max={100}
-            onChange={(v) => onAdjustmentChange('saturation', v)} disabled={disabled} />
-          <SliderRow label="Highlights" value={highlights} min={-100} max={100}
-            onChange={(v) => onAdjustmentChange('highlights', v)} disabled={disabled} />
-          <SliderRow label="Shadows" value={shadows} min={-100} max={100}
-            onChange={(v) => onAdjustmentChange('shadows', v)} disabled={disabled} />
-          <SliderRow label="Temperature" value={temperature} min={-100} max={100}
-            onChange={(v) => onAdjustmentChange('temperature', v)} disabled={disabled} />
-        </div>
+      {/* ── Lumetri Color ── */}
+      {activePanel === 'lumetri' && (
+        <LumetriColorPanel
+          lumetri={lumetri}
+          disabled={disabled}
+          onBasicChange={onLumetriBasicChange}
+          onCurvesChange={onCurvesChange}
+          onColorWheelChange={onColorWheelChange}
+          onReset={onResetLumetri}
+        />
       )}
 
-      {activePanel === 'audio' && (
-        <div className="panel-body">
-          <p className="section-subtitle">Audio</p>
-          <div className="info-box">
-            <p>🎚 Audio mixer, equalization, and noise reduction are available in the
-            timeline panel below the video preview.</p>
-          </div>
-          <p className="section-subtitle" style={{ marginTop: 12 }}>Tracks</p>
-          <div className="track-list">
-            <div className="track-item">
-              <span className="track-icon">🎵</span>
-              <span className="track-label">Video Audio</span>
-              <span className="track-badge">Main</span>
-            </div>
-          </div>
-        </div>
+      {/* ── Essential Sound ── */}
+      {activePanel === 'sound' && (
+        <EssentialSoundPanel
+          audio={audio}
+          disabled={disabled}
+          onChange={onAudioChange}
+        />
       )}
 
+      {/* ── Effects ── */}
       {activePanel === 'effects' && (
         <div className="panel-body">
           <p className="section-subtitle">Transitions</p>
           <div className="effects-grid">
-            {['Cut', 'Fade', 'Dissolve', 'Wipe', 'Slide', 'Zoom'].map((t) => (
-              <button key={t} className="effect-btn" disabled={disabled}>{t}</button>
+            {TRANSITIONS.map((t) => (
+              <button
+                key={t}
+                className={`effect-btn${appliedTransition === t ? ' effect-btn-active' : ''}`}
+                disabled={disabled}
+                onClick={() => setAppliedTransition(appliedTransition === t ? null : t)}
+              >
+                {t}
+              </button>
             ))}
           </div>
-          <p className="section-subtitle" style={{ marginTop: 12 }}>Speed</p>
+          {appliedTransition && (
+            <div className="info-box" style={{ marginTop: 10 }}>
+              <strong>{appliedTransition}</strong> transition applied at In/Out points.
+            </div>
+          )}
+          <p className="section-subtitle" style={{ marginTop: 12 }}>Adjustment Layer</p>
           <div className="info-box">
-            <p>Use the Speed control in the playback bar to apply speed ramping.</p>
+            <p>Apply color grades or effects to multiple clips simultaneously by adding an Adjustment Layer above your clips on the timeline.</p>
           </div>
         </div>
       )}
 
-      {activePanel === 'file' && (
+      {/* ── AI Tools ── */}
+      {activePanel === 'ai' && (
         <div className="panel-body">
-          <button className="reset-btn" onClick={onOpenVideo}>
+          <p className="section-subtitle">Auto Reframe</p>
+          <p className="panel-hint" style={{ textAlign: 'left', marginBottom: 8 }}>
+            Reframe output for different platforms:
+          </p>
+          <div className="reframe-btns">
+            {AUTO_REFRAME_ASPECTS.map((a) => (
+              <button
+                key={a.value}
+                className={`reframe-btn${autoReframe === a.value ? ' active' : ''}`}
+                onClick={() => onSetAutoReframe(a.value)}
+                disabled={disabled}
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
+
+          <p className="section-subtitle" style={{ marginTop: 14 }}>Scene Edit Detection</p>
+          <div className="info-box" style={{ marginBottom: 10 }}>
+            <p>Automatically detect cuts in pre-edited footage and split into individual clips on the timeline.</p>
+          </div>
+          <button className="reset-btn" onClick={onDetectScenes} disabled={disabled}>
+            🔍 Detect Scenes
+          </button>
+
+          <p className="section-subtitle" style={{ marginTop: 14 }}>Enhance Speech</p>
+          <div className="info-box">
+            <p>AI-powered noise removal — makes dialogue sound professionally recorded. Configure in the <strong>Sound</strong> panel → Dialogue → Clarity.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Export ── */}
+      {activePanel === 'export' && (
+        <div className="panel-body">
+          <button className="reset-btn" style={{ marginBottom: 14 }} onClick={onOpenVideo}>
             📁 Open Video
           </button>
-          {disabled && (
-            <p className="panel-hint">Load a video file to begin editing</p>
-          )}
-          <div className="info-box" style={{ marginTop: 12 }}>
-            <p><strong>Supported formats:</strong><br />
-            MP4, WebM, MOV, AVI, MKV, M4V, FLV, WMV</p>
+          <p className="section-subtitle">Platform Preset</p>
+          <div className="export-platform-grid">
+            {EXPORT_PLATFORMS.map((p) => (
+              <button
+                key={p.id}
+                className={`export-preset-btn${exportPlatform === p.id ? ' active' : ''}`}
+                onClick={() => setExportPlatform(p.id)}
+                disabled={disabled}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
+          <div className="info-box" style={{ marginTop: 10 }}>
+            <p>
+              <strong>Resolution:</strong> {selectedPlatformDef.res}<br />
+              <strong>Frame Rate:</strong> {selectedPlatformDef.fps} fps<br />
+              <strong>Format:</strong> {selectedPlatformDef.format.toUpperCase()}
+            </p>
+          </div>
+          <div className="slider-row" style={{ marginTop: 10 }}>
+            <div className="slider-header">
+              <span className="slider-label">Quality</span>
+              <span className="slider-value">{exportQuality}%</span>
+            </div>
+            <input type="range" min={40} max={100} value={exportQuality}
+              onChange={(e) => setExportQuality(Number(e.target.value))}
+              className="slider" disabled={disabled} aria-label="Export quality" />
+          </div>
+          <button
+            className="btn-primary"
+            style={{ width: '100%', marginTop: 12 }}
+            onClick={onExport}
+            disabled={disabled}
+          >
+            ↓ Export Video
+          </button>
         </div>
       )}
-
-      <div className="panel-footer">
-        <button className="reset-btn" onClick={() => {
-          (['brightness', 'contrast', 'saturation', 'temperature', 'highlights', 'shadows'] as const)
-            .forEach((k) => onAdjustmentChange(k, 0));
-        }} disabled={disabled}>
-          ↺ Reset Color
-        </button>
-      </div>
     </aside>
   );
 };

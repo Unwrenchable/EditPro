@@ -1,5 +1,87 @@
 export type EditorMode = 'photo' | 'video';
 
+// ── Lumetri Color ───────────────────────────────────────────────────────────
+
+export interface LumetriCurves {
+  masterShadow: number;      // -100..100
+  masterMidtone: number;     // -100..100
+  masterHighlight: number;   // -100..100
+  redShadow: number;
+  redMidtone: number;
+  redHighlight: number;
+  greenShadow: number;
+  greenMidtone: number;
+  greenHighlight: number;
+  blueShadow: number;
+  blueMidtone: number;
+  blueHighlight: number;
+}
+
+export interface ColorWheelAdjust {
+  x: number;         // -1..1 (horizontal hue axis)
+  y: number;         // -1..1 (vertical hue axis)
+  luminance: number; // -100..100
+}
+
+export interface LumetriColorWheels {
+  shadows: ColorWheelAdjust;
+  midtones: ColorWheelAdjust;
+  highlights: ColorWheelAdjust;
+}
+
+/** Full Lumetri Color state — maps 1-to-1 to Premiere Pro's Lumetri Color panel */
+export interface LumetriColor {
+  exposure: number;     // -5..5 (EV stops)
+  contrast: number;     // -100..100
+  highlights: number;   // -100..100
+  shadows: number;      // -100..100
+  whites: number;       // -100..100
+  blacks: number;       // -100..100
+  temperature: number;  // -100..100 (cool → warm)
+  tint: number;         // -100..100 (green → magenta)
+  saturation: number;   // -100..100 (0 = unchanged)
+  vibrance: number;     // -100..100
+  curves: LumetriCurves;
+  wheels: LumetriColorWheels;
+}
+
+// ── Essential Sound ─────────────────────────────────────────────────────────
+
+export type AudioCategory = 'dialogue' | 'music' | 'sfx' | 'ambience';
+
+export interface AudioTrackSettings {
+  category: AudioCategory;
+  noiseReduction: number; // 0-100
+  clarity: number;        // 0-100 (dialogue clarity / high-shelf boost)
+  deReverb: number;       // 0-100
+  loudness: number;       // -20..0 (target loudness offset in dB)
+  autoDuck: boolean;      // auto-duck music under dialogue
+  lowCut: boolean;        // remove low-end rumble (<80 Hz)
+}
+
+// ── Timeline markers ────────────────────────────────────────────────────────
+
+export interface TimelineMarker {
+  id: string;
+  time: number;
+  label: string;
+  color: 'red' | 'yellow' | 'green' | 'blue';
+}
+
+// ── Auto Reframe & Export ───────────────────────────────────────────────────
+
+export type AutoReframeAspect = '16:9' | '9:16' | '1:1' | '4:5' | '4:3' | 'original';
+
+export interface VideoExportOptions {
+  platform: 'youtube' | 'tiktok' | 'vimeo' | 'twitter' | 'custom';
+  resolution: '4K' | '1080p' | '720p' | '480p';
+  frameRate: 24 | 30 | 60;
+  format: 'mp4' | 'webm' | 'mov';
+  quality: number; // 0-100
+}
+
+// ── Photo ───────────────────────────────────────────────────────────────────
+
 export interface PhotoAdjustments {
   brightness: number;      // -100 to 100
   contrast: number;        // -100 to 100
@@ -71,12 +153,16 @@ export interface VideoEditorState {
   playbackRate: number;
   volume: number;
   isMuted: boolean;
-  brightness: number;   // -100 to 100
-  contrast: number;     // -100 to 100
-  saturation: number;   // -100 to 100
-  temperature: number;  // -100 to 100
-  highlights: number;   // -100 to 100
-  shadows: number;      // -100 to 100
+  /** Lumetri Color — replaces the old flat brightness/contrast/saturation/etc. */
+  lumetri: LumetriColor;
+  /** Essential Sound panel settings */
+  audio: AudioTrackSettings;
+  /** Timeline markers (sorted by time) */
+  markers: TimelineMarker[];
+  /** Auto Reframe output aspect ratio */
+  autoReframe: AutoReframeAspect;
+  /** Timeline zoom level (0.5 – 8) */
+  timelineZoom: number;
 }
 
 export interface ExportOptions {
