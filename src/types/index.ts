@@ -1,15 +1,27 @@
 export type EditorMode = 'photo' | 'video';
 
 export interface PhotoAdjustments {
-  brightness: number;   // -100 to 100
-  contrast: number;     // -100 to 100
-  saturation: number;   // -100 to 100
-  exposure: number;     // -100 to 100
-  highlights: number;   // -100 to 100
-  shadows: number;      // -100 to 100
-  sharpness: number;    // 0 to 100
-  temperature: number;  // -100 to 100 (cool to warm)
-  tint: number;         // -100 to 100
+  brightness: number;      // -100 to 100
+  contrast: number;        // -100 to 100
+  saturation: number;      // -100 to 100
+  exposure: number;        // -100 to 100
+  highlights: number;      // -100 to 100
+  shadows: number;         // -100 to 100
+  sharpness: number;       // 0 to 100
+  temperature: number;     // -100 to 100 (cool to warm)
+  tint: number;            // -100 to 100
+  // Extended professional controls
+  whites: number;          // -100 to 100
+  blacks: number;          // -100 to 100
+  vibrance: number;        // -100 to 100
+  hue: number;             // -180 to 180
+  noiseReduction: number;  // 0 to 100
+  clarity: number;         // -100 to 100
+  texture: number;         // -100 to 100
+  dehaze: number;          // -100 to 100
+  vignette: number;        // -100 to 100
+  grain: number;           // 0 to 100
+  fade: number;            // 0 to 100
 }
 
 export type PhotoFilterName =

@@ -81,7 +81,7 @@ export function usePhotoEditor() {
   }, [state.imageUrl]);
 
   const handleExport = useCallback(
-    async (options: ExportOptions): Promise<void> => {
+    async (options: ExportOptions, saveFn?: (dataUrl: string, name: string) => Promise<void>): Promise<void> => {
       if (!state.imageUrl) return;
       setIsExporting(true);
       try {
@@ -94,11 +94,16 @@ export function usePhotoEditor() {
           options.format,
           options.quality
         );
-        const link = document.createElement('a');
         const ext = options.format === 'jpeg' ? 'jpg' : options.format;
-        link.download = `editpro-export.${ext}`;
-        link.href = dataUrl;
-        link.click();
+        const fileName = `editpro-export.${ext}`;
+        if (saveFn) {
+          await saveFn(dataUrl, fileName);
+        } else {
+          const link = document.createElement('a');
+          link.download = fileName;
+          link.href = dataUrl;
+          link.click();
+        }
       } finally {
         setIsExporting(false);
       }
