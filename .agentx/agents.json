@@ -1,0 +1,189 @@
+[
+  {
+    "id": "editpro-orchestrator",
+    "role": "EditPro Multi-Agent Orchestrator",
+    "description": "Coordinates all EditPro specialist agents. Breaks features into sub-tasks, routes work to photo-engine, video-engine, electron-engineer, ui-engineer, test-engineer and release-engineer. Tracks delivery and resolves blockers.",
+    "tags": ["editpro", "typescript", "electron", "orchestration", "planning"],
+    "capabilities": ["task-decomposition", "agent-routing", "progress-tracking", "conflict-resolution", "release-planning"],
+    "required_tools": ["read_file", "list_dir", "grep_search", "apply_patch", "create_file", "run_in_terminal", "github_repo", "runSubagent"],
+    "preferred_profile": "power",
+    "risk_level": "medium",
+    "workflow": [
+      "Read product requirements and open issues",
+      "Decompose into sub-tasks per specialist domain",
+      "Dispatch work to domain agents",
+      "Verify output passes CI checks",
+      "Merge and release"
+    ],
+    "success_criteria": [
+      "All CI checks green",
+      "No specialist agent blocked >2 iterations",
+      "Release artifact produced for all 3 platforms"
+    ]
+  },
+  {
+    "id": "editpro-photo-engine",
+    "role": "EditPro Photo Engine Engineer",
+    "description": "Owns all photo editing features: CSS filter pipeline, Canvas 2D export, RAW file handling via native IPC, adjustment algorithms (brightness, contrast, saturation, exposure, highlights, shadows, whites, blacks, vibrance, hue, clarity, texture, dehaze, vignette, grain, fade, noise reduction, sharpness, temperature, tint), preset filters, transform (rotate/flip), and batch export.",
+    "tags": ["editpro", "typescript", "canvas", "image-processing", "photo-editing"],
+    "capabilities": ["css-filter-pipeline", "canvas-export", "raw-support", "color-science", "batch-processing"],
+    "required_tools": ["read_file", "list_dir", "grep_search", "apply_patch", "create_file", "run_in_terminal"],
+    "preferred_profile": "balanced",
+    "risk_level": "low",
+    "workflow": [
+      "Read src/utils/imageFilters.ts and src/types/index.ts",
+      "Identify adjustment or filter to add/fix",
+      "Update algorithm in imageFilters.ts",
+      "Update PhotoAdjustments type if needed",
+      "Update PhotoAdjustmentPanel UI panel",
+      "Run vitest tests",
+      "Verify visually in dev mode"
+    ],
+    "success_criteria": [
+      "All imageFilters.test.ts tests pass",
+      "CSS filter output is mathematically correct",
+      "No visual regression in preview image"
+    ]
+  },
+  {
+    "id": "editpro-video-engine",
+    "role": "EditPro Video Engine Engineer",
+    "description": "Owns all video editing features: HTML5 video playback, trim in/out points, multi-track timeline, playback speed, volume/mute, color grading filters via CSS, transitions panel, audio controls, and format support (MP4, WebM, MOV, AVI, MKV).",
+    "tags": ["editpro", "typescript", "html5-video", "video-editing", "timeline"],
+    "capabilities": ["video-playback", "trim-editing", "color-grading", "timeline", "audio-control"],
+    "required_tools": ["read_file", "list_dir", "grep_search", "apply_patch", "create_file", "run_in_terminal"],
+    "preferred_profile": "balanced",
+    "risk_level": "low",
+    "workflow": [
+      "Read src/hooks/useVideoEditor.ts and src/utils/videoUtils.ts",
+      "Identify feature or bug",
+      "Update hook/utility",
+      "Update VideoEditor/VideoTimeline/VideoControls components",
+      "Run vitest tests",
+      "Verify playback in dev mode"
+    ],
+    "success_criteria": [
+      "All videoUtils.test.ts and VideoControls.test.ts tests pass",
+      "Trim correctly constrains playback",
+      "Color grading visible in preview"
+    ]
+  },
+  {
+    "id": "editpro-electron-engineer",
+    "role": "EditPro Electron / Desktop Engineer",
+    "description": "Owns the Electron main process (electron/main.ts), preload script (electron/preload.ts), IPC bridge, native file dialogs, application menu, auto-updater, and electron-builder packaging for macOS (.dmg), Windows (NSIS installer + portable .exe), and Linux (.AppImage + .deb).",
+    "tags": ["editpro", "electron", "desktop", "ipc", "packaging", "cross-platform"],
+    "capabilities": ["electron-main-process", "ipc-bridge", "native-dialogs", "app-menu", "cross-platform-packaging", "auto-updater"],
+    "required_tools": ["read_file", "list_dir", "grep_search", "apply_patch", "create_file", "run_in_terminal", "github_repo"],
+    "preferred_profile": "power",
+    "risk_level": "medium",
+    "workflow": [
+      "Read electron/main.ts and electron-builder config",
+      "Make IPC or packaging change",
+      "Build renderer with vite",
+      "Build electron with tsc",
+      "Run electron to verify",
+      "Package with electron-builder for target platform"
+    ],
+    "success_criteria": [
+      "electron-builder produces artifacts for all 3 platforms",
+      "IPC round-trip works for openImage/openVideo/saveImage",
+      "App menu shortcuts work on macOS and Windows",
+      "Portable .exe runs from USB without installation"
+    ]
+  },
+  {
+    "id": "editpro-ui-engineer",
+    "role": "EditPro UI / React Engineer",
+    "description": "Owns all React components, CSS (App.css, index.css), layout, dark theme, accessibility (ARIA, keyboard navigation), responsive behavior, and the TopBar/PhotoDropZone/VideoDropZone components. Ensures EditPro looks and feels as polished as industry-standard tools.",
+    "tags": ["editpro", "react", "typescript", "css", "ui", "accessibility", "dark-theme"],
+    "capabilities": ["react-components", "css-design", "accessibility", "responsive-layout", "dark-theme"],
+    "required_tools": ["read_file", "list_dir", "grep_search", "apply_patch", "create_file", "run_in_terminal"],
+    "preferred_profile": "balanced",
+    "risk_level": "low",
+    "workflow": [
+      "Review existing component and CSS",
+      "Make targeted change",
+      "Run npm run build to catch TS errors",
+      "Take screenshot in dev mode",
+      "Run tests"
+    ],
+    "success_criteria": [
+      "No TypeScript errors",
+      "ARIA labels present on all interactive elements",
+      "Dark theme consistent across all components",
+      "TopBar.test.tsx passes"
+    ]
+  },
+  {
+    "id": "editpro-test-engineer",
+    "role": "EditPro Test Engineer",
+    "description": "Maintains and expands the Vitest + Testing Library test suite for EditPro. Writes unit tests for utilities (imageFilters.ts, videoUtils.ts), integration tests for hooks (usePhotoEditor, useVideoEditor, useNativeFiles), and component tests for all major UI components.",
+    "tags": ["editpro", "typescript", "vitest", "testing-library", "unit-tests", "integration-tests"],
+    "capabilities": ["unit-testing", "component-testing", "hook-testing", "coverage-reporting", "ci-integration"],
+    "required_tools": ["read_file", "list_dir", "grep_search", "apply_patch", "create_file", "run_in_terminal"],
+    "preferred_profile": "balanced",
+    "risk_level": "low",
+    "workflow": [
+      "Identify untested code path",
+      "Write test in src/test/",
+      "Run npm test",
+      "Check coverage",
+      "Ensure no false positives"
+    ],
+    "success_criteria": [
+      "All tests pass (vitest run exits 0)",
+      "No test uses real DOM APIs without jsdom setup",
+      "New features have at least one test"
+    ]
+  },
+  {
+    "id": "editpro-release-engineer",
+    "role": "EditPro Release & Packaging Engineer",
+    "description": "Owns version bumping, CHANGELOG maintenance, GitHub Release creation, electron-builder artifact generation for all platforms, code signing configuration, auto-update feed setup, and portable/USB-ready packaging. Ensures every release is download-ready and plug-and-play on macOS, Windows, and Linux.",
+    "tags": ["editpro", "electron-builder", "release", "packaging", "versioning", "code-signing", "auto-updater"],
+    "capabilities": ["electron-builder", "cross-platform-packaging", "code-signing", "github-releases", "auto-updater", "portable-build"],
+    "required_tools": ["read_file", "list_dir", "grep_search", "apply_patch", "create_file", "run_in_terminal", "github_repo"],
+    "preferred_profile": "power",
+    "risk_level": "medium",
+    "workflow": [
+      "Bump version in package.json",
+      "Update CHANGELOG.md",
+      "Run npm run build:electron for all targets",
+      "Verify artifacts in dist-electron/",
+      "Create GitHub Release with artifacts attached",
+      "Verify auto-updater YAML is correct"
+    ],
+    "success_criteria": [
+      "macOS .dmg, Windows NSIS .exe + portable .exe, Linux .AppImage + .deb artifacts produced",
+      "Artifacts run without installation (portable mode works)",
+      "GitHub Release created with correct tag and notes"
+    ]
+  },
+  {
+    "id": "editpro-security-engineer",
+    "role": "EditPro Security Engineer",
+    "description": "Audits Electron IPC, contextIsolation, sandbox settings, CSP headers, dependency vulnerabilities, and renderer input validation. Ensures no nodeIntegration, validates all IPC input in main process, reviews preload script for unsafe API exposure, and checks electron-builder for code signing.",
+    "tags": ["editpro", "security", "electron", "ipc", "csp", "vulnerabilities", "audit"],
+    "capabilities": ["ipc-security-audit", "csp-review", "dependency-scanning", "code-review", "contextIsolation-validation"],
+    "required_tools": ["read_file", "list_dir", "grep_search", "semantic_search"],
+    "preferred_profile": "safe",
+    "risk_level": "low",
+    "workflow": [
+      "Review electron/main.ts for IPC input validation",
+      "Check preload.ts for unsafe API exposure",
+      "Scan package.json deps with npm audit",
+      "Verify contextIsolation:true and nodeIntegration:false in BrowserWindow",
+      "Verify sandbox:true",
+      "Review CSP headers if web server used"
+    ],
+    "success_criteria": [
+      "nodeIntegration is false",
+      "contextIsolation is true",
+      "sandbox is true",
+      "All IPC handlers validate input types",
+      "npm audit reports 0 critical/high vulnerabilities",
+      "No arbitrary file paths accepted from renderer without validation"
+    ]
+  }
+]
