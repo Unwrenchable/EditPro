@@ -690,3 +690,154 @@
 .btn-primary:hover {
   background: #6a4aaa;
 }
+
+/* ── Panel Tabs ──────────────────────────────────────────────────────────── */
+.panel-tabs {
+  display: flex;
+  background: #161616;
+  border-bottom: 1px solid #2a2a2a;
+  padding: 4px 4px 0;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.panel-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 5px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #666;
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+  transition: color 0.15s, border-color 0.15s;
+  min-width: 44px;
+}
+
+.panel-tab:hover:not(:disabled) {
+  color: #bbb;
+}
+
+.panel-tab.active {
+  color: #c9a9f0;
+  border-bottom-color: #7c5cbf;
+}
+
+.panel-tab:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.panel-tab-icon {
+  font-size: 14px;
+}
+
+.panel-tab-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Panel Body & Footer ────────────────────────────────────────────────── */
+.panel-body {
+  padding: 12px 14px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.panel-footer {
+  padding: 10px 14px;
+  border-top: 1px solid #222;
+}
+
+.section-subtitle {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #555;
+  margin-bottom: 8px;
+}
+
+/* ── Info Box ────────────────────────────────────────────────────────────── */
+.info-box {
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 11px;
+  color: #777;
+  line-height: 1.6;
+}
+
+.info-box strong {
+  color: #aaa;
+}
+
+/* ── Effects Grid ────────────────────────────────────────────────────────── */
+.effects-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.effect-btn {
+  padding: 7px 0;
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  background: #222;
+  color: #aaa;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.effect-btn:hover:not(:disabled) {
+  background: #2e2e2e;
+  color: #ddd;
+}
+
+.effect-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Track List ──────────────────────────────────────────────────────────── */
+.track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.track-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: #222;
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.track-icon {
+  font-size: 14px;
+}
+
+.track-label {
+  flex: 1;
+  color: #bbb;
+}
+
+.track-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: #7c5cbf33;
+  border: 1px solid #7c5cbf66;
+  border-radius: 10px;
+  color: #c9a9f0;
+}

@@ -8,7 +8,9 @@ import { buildVideoFilter } from '../../utils/videoUtils';
 import { formatFileSize } from '../../utils/imageFilters';
 
 const VideoEditor: React.FC = () => {
-  const editor = useVideoEditor();
+  // The component owns the ref — correct React pattern that satisfies react-hooks/refs
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const editor = useVideoEditor(videoRef);
   const { state } = editor;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -23,6 +25,44 @@ const VideoEditor: React.FC = () => {
     if (file) editor.loadVideo(file);
   };
 
+  // Stable callbacks derived from current state — created here in the component,
+  // not in the hook, so the linter sees them as component-level handlers.
+  const handleTogglePlay = useCallback(() => {
+    editor.togglePlay(state.isPlaying, state.trimStart, state.trimEnd);
+  }, [editor, state.isPlaying, state.trimStart, state.trimEnd]);
+
+  const handleVolumeChange = useCallback(
+    (vol: number) => editor.setVolume(vol),
+    [editor]
+  );
+
+  const handleToggleMute = useCallback(
+    () => editor.toggleMute(state.isMuted),
+    [editor, state.isMuted]
+  );
+
+  const handlePlaybackRateChange = useCallback(
+    (rate: number) => editor.setPlaybackRate(rate),
+    [editor]
+  );
+
+  const handleSeek = useCallback(
+    (time: number) => editor.seek(time),
+    [editor]
+  );
+
+  const handleTrimStartChange = useCallback(
+    (value: number) => editor.setTrimStart(value, state.trimEnd),
+    [editor, state.trimEnd]
+  );
+
+  const handleTrimEndChange = useCallback(
+    (value: number) => editor.setTrimEnd(value, state.trimStart, state.duration),
+    [editor, state.trimStart, state.duration]
+  );
+
+  const handleEnded = useCallback(() => editor.pause(), [editor]);
+
   return (
     <div className="editor-layout">
       <div className="editor-main">
@@ -32,15 +72,13 @@ const VideoEditor: React.FC = () => {
           <div className="video-area">
             <div className="video-container">
               <video
-                ref={editor.setVideoRef}
+                ref={videoRef}
                 src={state.videoUrl}
                 className="preview-video"
                 style={{ filter: videoFilter }}
                 onLoadedMetadata={editor.onLoadedMetadata}
                 onTimeUpdate={editor.onTimeUpdate}
-                onEnded={() => {
-                  editor.pause();
-                }}
+                onEnded={handleEnded}
                 aria-label="Video preview"
               />
             </div>
@@ -51,19 +89,19 @@ const VideoEditor: React.FC = () => {
               volume={state.volume}
               isMuted={state.isMuted}
               playbackRate={state.playbackRate}
-              onTogglePlay={editor.togglePlay}
-              onVolumeChange={editor.setVolume}
-              onToggleMute={editor.toggleMute}
-              onPlaybackRateChange={editor.setPlaybackRate}
+              onTogglePlay={handleTogglePlay}
+              onVolumeChange={handleVolumeChange}
+              onToggleMute={handleToggleMute}
+              onPlaybackRateChange={handlePlaybackRateChange}
             />
             <VideoTimeline
               duration={state.duration}
               currentTime={state.currentTime}
               trimStart={state.trimStart}
               trimEnd={state.trimEnd}
-              onSeek={editor.seek}
-              onTrimStartChange={editor.setTrimStart}
-              onTrimEndChange={editor.setTrimEnd}
+              onSeek={handleSeek}
+              onTrimStartChange={handleTrimStartChange}
+              onTrimEndChange={handleTrimEndChange}
             />
           </div>
         )}

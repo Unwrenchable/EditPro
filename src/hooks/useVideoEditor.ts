@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
+import type { RefObject } from 'react';
 import type { VideoEditorState } from '../types';
 import { clamp } from '../utils/videoUtils';
 
@@ -21,9 +22,14 @@ const initialState: VideoEditorState = {
   shadows: 0,
 };
 
-export function useVideoEditor() {
+/**
+ * Video editor state and operations.
+ * The caller owns the videoRef and passes it in; this keeps the ref in the
+ * component tree (correct React pattern) and avoids eslint react-hooks/refs
+ * violations when passing hook-returned callbacks as JSX props.
+ */
+export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   const [state, setState] = useState<VideoEditorState>(initialState);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const loadVideo = useCallback((file: File) => {
     const url = URL.createObjectURL(file);
@@ -35,10 +41,6 @@ export function useVideoEditor() {
     });
   }, []);
 
-  const setVideoRef = useCallback((el: HTMLVideoElement | null) => {
-    videoRef.current = el;
-  }, []);
-
   const onLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -47,13 +49,12 @@ export function useVideoEditor() {
       duration: video.duration,
       trimEnd: video.duration,
     }));
-  }, []);
+  }, [videoRef]);
 
   const onTimeUpdate = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
     setState((prev) => {
-      // Auto-stop at trim end
       if (video.currentTime >= prev.trimEnd) {
         video.pause();
         video.currentTime = prev.trimStart;
@@ -61,101 +62,121 @@ export function useVideoEditor() {
       }
       return { ...prev, currentTime: video.currentTime };
     });
-  }, []);
+  }, [videoRef]);
 
-  const play = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.currentTime >= state.trimEnd) {
-      video.currentTime = state.trimStart;
-    }
-    void video.play();
-    setState((prev) => ({ ...prev, isPlaying: true }));
-  }, [state.trimEnd, state.trimStart]);
+  const play = useCallback(
+    (trimStart: number, trimEnd: number) => {
+      const video = videoRef.current;
+      if (!video) return;
+      if (video.currentTime >= trimEnd) {
+        video.currentTime = trimStart;
+      }
+      void video.play();
+      setState((prev) => ({ ...prev, isPlaying: true }));
+    },
+    [videoRef]
+  );
 
   const pause = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
     video.pause();
     setState((prev) => ({ ...prev, isPlaying: false }));
-  }, []);
+  }, [videoRef]);
 
-  const togglePlay = useCallback(() => {
-    if (state.isPlaying) {
-      pause();
-    } else {
-      play();
-    }
-  }, [state.isPlaying, play, pause]);
+  const togglePlay = useCallback(
+    (isPlaying: boolean, trimStart: number, trimEnd: number) => {
+      if (isPlaying) {
+        pause();
+      } else {
+        play(trimStart, trimEnd);
+      }
+    },
+    [pause, play]
+  );
 
-  const seek = useCallback((time: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    const clamped = clamp(time, 0, video.duration || 0);
-    video.currentTime = clamped;
-    setState((prev) => ({ ...prev, currentTime: clamped }));
-  }, []);
+  const seek = useCallback(
+    (time: number) => {
+      const video = videoRef.current;
+      if (!video) return;
+      const clamped = clamp(time, 0, video.duration || 0);
+      video.currentTime = clamped;
+      setState((prev) => ({ ...prev, currentTime: clamped }));
+    },
+    [videoRef]
+  );
 
   const setTrimStart = useCallback(
-    (value: number) => {
-      const clamped = clamp(value, 0, state.trimEnd - 0.1);
+    (value: number, trimEnd: number) => {
+      const clamped = clamp(value, 0, trimEnd - 0.1);
       setState((prev) => ({ ...prev, trimStart: clamped }));
       const video = videoRef.current;
       if (video && video.currentTime < clamped) {
         video.currentTime = clamped;
       }
     },
-    [state.trimEnd]
+    [videoRef]
   );
 
   const setTrimEnd = useCallback(
-    (value: number) => {
-      const clamped = clamp(value, state.trimStart + 0.1, state.duration);
+    (value: number, trimStart: number, duration: number) => {
+      const clamped = clamp(value, trimStart + 0.1, duration);
       setState((prev) => ({ ...prev, trimEnd: clamped }));
     },
-    [state.trimStart, state.duration]
+    []
   );
 
-  const setPlaybackRate = useCallback((rate: number) => {
-    const video = videoRef.current;
-    if (video) video.playbackRate = rate;
-    setState((prev) => ({ ...prev, playbackRate: rate }));
-  }, []);
+  const setPlaybackRate = useCallback(
+    (rate: number) => {
+      const video = videoRef.current;
+      if (video) video.playbackRate = rate;
+      setState((prev) => ({ ...prev, playbackRate: rate }));
+    },
+    [videoRef]
+  );
 
-  const setVolume = useCallback((vol: number) => {
-    const video = videoRef.current;
-    const clamped = clamp(vol, 0, 1);
-    if (video) video.volume = clamped;
-    setState((prev) => ({ ...prev, volume: clamped, isMuted: clamped === 0 }));
-  }, []);
+  const setVolume = useCallback(
+    (vol: number) => {
+      const video = videoRef.current;
+      const clamped = clamp(vol, 0, 1);
+      if (video) video.volume = clamped;
+      setState((prev) => ({ ...prev, volume: clamped, isMuted: clamped === 0 }));
+    },
+    [videoRef]
+  );
 
-  const toggleMute = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const newMuted = !state.isMuted;
-    video.muted = newMuted;
-    setState((prev) => ({ ...prev, isMuted: newMuted }));
-  }, [state.isMuted]);
+  const toggleMute = useCallback(
+    (isMuted: boolean) => {
+      const video = videoRef.current;
+      if (!video) return;
+      const newMuted = !isMuted;
+      video.muted = newMuted;
+      setState((prev) => ({ ...prev, isMuted: newMuted }));
+    },
+    [videoRef]
+  );
 
   const updateVideoAdjustment = useCallback(
-    (key: 'brightness' | 'contrast' | 'saturation' | 'temperature' | 'highlights' | 'shadows', value: number) => {
+    (
+      key: 'brightness' | 'contrast' | 'saturation' | 'temperature' | 'highlights' | 'shadows',
+      value: number
+    ) => {
       setState((prev) => ({ ...prev, [key]: value }));
     },
     []
   );
 
-  const resetVideo = useCallback(() => {
-    if (state.videoUrl) {
-      URL.revokeObjectURL(state.videoUrl);
-    }
-    setState(initialState);
-    videoRef.current = null;
-  }, [state.videoUrl]);
+  const resetVideo = useCallback(
+    (videoUrl: string | null) => {
+      if (videoUrl) URL.revokeObjectURL(videoUrl);
+      setState(initialState);
+    },
+    []
+  );
 
   return {
     state,
-    videoRef,
-    setVideoRef,
+    loadVideo,
     onLoadedMetadata,
     onTimeUpdate,
     play,
@@ -169,6 +190,5 @@ export function useVideoEditor() {
     toggleMute,
     updateVideoAdjustment,
     resetVideo,
-    loadVideo,
   };
 }

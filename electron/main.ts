@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeTheme, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeTheme } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
