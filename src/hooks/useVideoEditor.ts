@@ -16,6 +16,9 @@ const initialState: VideoEditorState = {
   brightness: 0,
   contrast: 0,
   saturation: 0,
+  temperature: 0,
+  highlights: 0,
+  shadows: 0,
 };
 
 export function useVideoEditor() {
@@ -135,7 +138,7 @@ export function useVideoEditor() {
   }, [state.isMuted]);
 
   const updateVideoAdjustment = useCallback(
-    (key: 'brightness' | 'contrast' | 'saturation', value: number) => {
+    (key: 'brightness' | 'contrast' | 'saturation' | 'temperature' | 'highlights' | 'shadows', value: number) => {
       setState((prev) => ({ ...prev, [key]: value }));
     },
     []

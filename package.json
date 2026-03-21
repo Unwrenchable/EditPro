@@ -3,13 +3,66 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
+    "dev:electron": "concurrently -k \"cross-env NODE_ENV=development vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron dist-electron/main.js\"",
     "build": "tsc -b && vite build",
+    "build:electron": "npm run build && tsc -p electron/tsconfig.json",
+    "dist": "npm run build:electron && electron-builder --publish never",
+    "dist:mac": "npm run build:electron && electron-builder --mac --publish never",
+    "dist:win": "npm run build:electron && electron-builder --win --publish never",
+    "dist:linux": "npm run build:electron && electron-builder --linux --publish never",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
+  },
+  "build": {
+    "appId": "com.editpro.app",
+    "productName": "EditPro",
+    "copyright": "Copyright © 2026 EditPro",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "build-resources/icon.icns"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build-resources/icon.ico"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ],
+      "icon": "build-resources/icons",
+      "category": "Graphics"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EditPro"
+    },
+    "portable": {
+      "artifactName": "EditPro-Portable-${version}.exe"
+    }
   },
   "dependencies": {
     "react": "^19.2.4",

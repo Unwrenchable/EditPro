@@ -89,6 +89,9 @@ const VideoEditor: React.FC = () => {
         brightness={state.brightness}
         contrast={state.contrast}
         saturation={state.saturation}
+        temperature={state.temperature}
+        highlights={state.highlights}
+        shadows={state.shadows}
         onAdjustmentChange={editor.updateVideoAdjustment}
         onOpenVideo={handleOpenVideo}
         videoUrl={state.videoUrl}
