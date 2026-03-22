@@ -1,0 +1,38 @@
+{
+  // MCP server configuration for GitHub Copilot (VS Code).
+  // Gives Copilot access to project files and the GitHub API so it has
+  // full context about the EditPro codebase, open issues, and pull requests.
+  //
+  // The GitHub token is read from the GITHUB_TOKEN environment variable so
+  // it is never stored in source control.  Set it in your shell or in a
+  // .env file that is listed in .gitignore.
+  "servers": {
+    // Filesystem server: lets Copilot read and search the project tree.
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    },
+
+    // GitHub server: lets Copilot query issues, PRs, commits, and releases
+    // for the Unwrenchable/EditPro repository.
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@github/github-mcp-server"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:githubToken}"
+      }
+    }
+  },
+
+  // VS Code will prompt for the token the first time it is needed.
+  "inputs": [
+    {
+      "id": "githubToken",
+      "type": "promptString",
+      "description": "GitHub Personal Access Token (repo + read:org scopes)",
+      "password": true
+    }
+  ]
+}
