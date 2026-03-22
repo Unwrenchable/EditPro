@@ -1,0 +1,51 @@
+{
+  // EditPro development container — Node 20 LTS on Debian Bookworm.
+  // Provides a consistent environment for the Vite renderer; the full
+  // Electron app requires a host display (run `npm run dev:electron`
+  // on your local machine or enable a virtual display in the container).
+  "name": "EditPro",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-20-bookworm",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // TypeScript & JavaScript
+        "ms-vscode.vscode-typescript-next",
+        // Linting
+        "dbaeumer.vscode-eslint",
+        // Formatting
+        "esbenp.prettier-vscode",
+        // Test runner UI
+        "vitest.explorer",
+        // GitHub Copilot
+        "GitHub.copilot",
+        "GitHub.copilot-chat"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "typescript.enablePromptUseWorkspaceTsdk": true,
+        "vitest.enable": true
+      }
+    }
+  },
+
+  // Install dependencies after the container is created.
+  "postCreateCommand": "npm install",
+
+  // Forward the Vite dev server port so you can preview the renderer in a browser.
+  "forwardPorts": [5173],
+  "portsAttributes": {
+    "5173": {
+      "label": "Vite Dev Server",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // Run as the non-root node user provided by the base image.
+  "remoteUser": "node"
+}
