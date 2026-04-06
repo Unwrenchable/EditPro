@@ -1,13 +1,12 @@
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { formatTime } from '../../utils/videoUtils';
-import type { TimelineMarker } from '../../types';
+import type { TimelineMarker, TimelineTrack, TimelineClip, TrackType } from '../../types';
+import TimelineTrackComponent, { TRACK_HEADER_W, TRACK_H_VIDEO, TRACK_H_AUDIO } from './TimelineTrack';
+import TimelineRuler from './TimelineRuler';
 
 const PIXELS_PER_SECOND = 60;
-const TRACK_HEADER_W    = 58;
 const RULER_H           = 22;
 const MARKER_H          = 16;
-const TRACK_H           = 34;
-const AUDIO_TRACK_H     = 30;
 
 const MARKER_COLORS: Record<TimelineMarker['color'], string> = {
   red: '#e05555', yellow: '#e0c044', green: '#44a055', blue: '#4477e0',
@@ -19,6 +18,8 @@ interface ProTimelineProps {
   trimStart: number;
   trimEnd: number;
   markers: TimelineMarker[];
+  tracks: TimelineTrack[];
+  clips: TimelineClip[];
   zoom: number;
   hasVideo: boolean;
   onSeek: (time: number) => void;
@@ -27,18 +28,31 @@ interface ProTimelineProps {
   onZoomChange: (zoom: number) => void;
   onAddMarker: () => void;
   onRemoveMarker: (id: string) => void;
+  onAddTrack: (type: TrackType) => void;
+  onSetTrackMuted: (trackId: string, muted: boolean) => void;
+  onSetTrackLocked: (trackId: string, locked: boolean) => void;
+  onRemoveTrack: (trackId: string) => void;
+  onDeleteClip: (clipId: string) => void;
+  onSplitClip: (clipId: string, atTime: number) => void;
 }
 
 const ProTimeline: React.FC<ProTimelineProps> = ({
-  duration, currentTime, trimStart, trimEnd, markers, zoom, hasVideo,
+  duration, currentTime, trimStart, trimEnd, markers, tracks, clips, zoom, hasVideo,
   onSeek, onTrimStartChange, onTrimEndChange, onZoomChange, onAddMarker, onRemoveMarker,
+  onAddTrack, onSetTrackMuted, onSetTrackLocked, onRemoveTrack, onDeleteClip, onSplitClip,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
   const pps = PIXELS_PER_SECOND * zoom;
   const trackWidth = Math.max(duration * pps + 40, 400);
-  const totalH = RULER_H + MARKER_H + TRACK_H + AUDIO_TRACK_H;
+  // Total height = ruler + marker lane + sum of all track heights
+  const tracksH = tracks.reduce(
+    (sum, t) => sum + (t.type === 'video' ? TRACK_H_VIDEO : TRACK_H_AUDIO),
+    0
+  );
+  const totalH = RULER_H + MARKER_H + tracksH;
 
   // Auto-scroll to keep playhead visible
   useEffect(() => {
@@ -82,10 +96,9 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
 
   const stopDrag = useCallback(() => { isDragging.current = false; }, []);
 
-  // Build time ruler ticks
-  const tickSecs = zoom >= 5 ? 1 : zoom >= 2 ? 2 : zoom >= 1 ? 5 : 10;
-  const ticks: number[] = [];
-  for (let t = 0; t <= duration; t += tickSecs) ticks.push(t);
+  const handleSplitSelected = useCallback(() => {
+    if (selectedClipId) onSplitClip(selectedClipId, currentTime);
+  }, [selectedClipId, currentTime, onSplitClip]);
 
   const playheadLeft = currentTime * pps;
   const trimInLeft   = trimStart  * pps;
@@ -103,9 +116,20 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
     <div className="pro-timeline">
       {/* ── Toolbar ── */}
       <div className="pro-tl-toolbar">
-        <button className="tl-tool-btn" onClick={onAddMarker} title="Add marker (M)">
+        <button className="tl-tool-btn" onClick={onAddMarker} title="Add marker (M)" aria-label="Add marker">
           ◆ Mark
         </button>
+        <button className="tl-tool-btn" onClick={() => onAddTrack('video')} title="Add video track" aria-label="Add video track">
+          + V
+        </button>
+        <button className="tl-tool-btn" onClick={() => onAddTrack('audio')} title="Add audio track" aria-label="Add audio track">
+          + A
+        </button>
+        {selectedClipId && (
+          <button className="tl-tool-btn" onClick={handleSplitSelected} title="Split clip at playhead" aria-label="Split selected clip at playhead">
+            ✂ Split
+          </button>
+        )}
         <span className="tl-timecode">{formatTime(currentTime)} / {formatTime(duration)}</span>
         <div className="tl-zoom-row">
           <span className="tl-zoom-label">Zoom</span>
@@ -128,107 +152,82 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
         onMouseLeave={stopDrag}
         style={{ height: totalH + 2 }}
       >
-        {/* Left track headers (sticky via absolute+sticky trick) */}
-        <div className="pro-tl-headers" style={{ width: TRACK_HEADER_W, height: totalH }}>
-          <div className="tl-hd-ruler"  style={{ height: RULER_H }}  />
-          <div className="tl-hd-lane"   style={{ height: MARKER_H }} />
-          <div className="tl-hd-track"  style={{ height: TRACK_H }}>
-            <span className="tl-hd-label">V1</span>
-          </div>
-          <div className="tl-hd-track tl-hd-audio" style={{ height: AUDIO_TRACK_H }}>
-            <span className="tl-hd-label">A1</span>
-          </div>
-        </div>
-
-        {/* Content column (scrolls) */}
-        <div className="pro-tl-content" style={{ width: trackWidth, height: totalH }}>
-          {/* ── Time ruler ── */}
-          <div className="tl-ruler" style={{ height: RULER_H, width: trackWidth }}>
-            {ticks.map((t) => (
-              <div key={t} className="tl-tick" style={{ left: t * pps }}>
-                <span className="tl-tick-label">{formatTime(t)}</span>
-              </div>
-            ))}
+        {/* Content column — MultiTrack rows handle their own headers */}
+        <div className="pro-tl-content-multitrack" style={{ width: trackWidth + TRACK_HEADER_W, minWidth: '100%' }}>
+          {/* ── Time ruler (spans full width) ── */}
+          <div style={{ display: 'flex' }}>
+            <div style={{ width: TRACK_HEADER_W, minWidth: TRACK_HEADER_W, height: RULER_H }} className="tl-hd-ruler" />
+            <TimelineRuler
+              duration={duration}
+              pixelsPerSecond={pps}
+              width={trackWidth}
+              height={RULER_H}
+              currentTime={currentTime}
+            />
           </div>
 
           {/* ── Marker lane ── */}
-          <div className="tl-marker-lane" style={{ height: MARKER_H, width: trackWidth }}>
-            {markers.map((m) => (
-              <div
-                key={m.id}
-                className="tl-marker"
-                style={{
-                  left: m.time * pps,
-                  color: MARKER_COLORS[m.color],
-                }}
-                title={`${m.label || 'Marker'} — ${formatTime(m.time)} (double-click to delete)`}
-                onDoubleClick={(e) => { e.stopPropagation(); onRemoveMarker(m.id); }}
-              >
-                ◆
-              </div>
-            ))}
-          </div>
-
-          {/* ── Video track V1 ── */}
-          <div className="tl-track tl-track-video" style={{ height: TRACK_H, width: trackWidth }}>
-            {/* Trimmed-out start */}
-            {trimStart > 0 && (
-              <div className="tl-clip-muted" style={{ left: 0, width: trimInLeft }} />
-            )}
-            {/* Active clip region */}
-            <div
-              className="tl-clip-active"
-              style={{ left: trimInLeft, width: trimOutLeft - trimInLeft }}
-            >
-              <span className="tl-clip-label">Video</span>
+          <div style={{ display: 'flex' }}>
+            <div style={{ width: TRACK_HEADER_W, minWidth: TRACK_HEADER_W, height: MARKER_H }} className="tl-hd-lane" />
+            <div className="tl-marker-lane" style={{ height: MARKER_H, width: trackWidth, position: 'relative' }}>
+              {markers.map((m) => (
+                <div
+                  key={m.id}
+                  className="tl-marker"
+                  style={{ left: m.time * pps, color: MARKER_COLORS[m.color] }}
+                  title={`${m.label || 'Marker'} — ${formatTime(m.time)} (double-click to delete)`}
+                  onDoubleClick={(e) => { e.stopPropagation(); onRemoveMarker(m.id); }}
+                >
+                  ◆
+                </div>
+              ))}
             </div>
-            {/* Trimmed-out end */}
-            {trimEnd < duration && (
-              <div className="tl-clip-muted" style={{ left: trimOutLeft, width: (duration - trimEnd) * pps }} />
-            )}
           </div>
 
-          {/* ── Audio track A1 ── */}
-          <div className="tl-track tl-track-audio" style={{ height: AUDIO_TRACK_H, width: trackWidth }}>
-            {trimStart > 0 && (
-              <div className="tl-clip-muted tl-clip-muted-audio" style={{ left: 0, width: trimInLeft }} />
-            )}
-            <div
-              className="tl-clip-active tl-clip-active-audio"
-              style={{ left: trimInLeft, width: trimOutLeft - trimInLeft }}
-            >
-              {/* Simulated waveform */}
-              <div className="tl-waveform">
-                {Array.from({ length: Math.min(Math.floor((trimEnd - trimStart) * pps / 4), 200) }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="tl-wave-bar"
-                    style={{ height: `${25 + Math.sin(i * 0.7) * 15 + Math.sin(i * 2.1) * 8}%` }}
-                  />
-                ))}
-              </div>
-            </div>
-            {trimEnd < duration && (
-              <div className="tl-clip-muted tl-clip-muted-audio" style={{ left: trimOutLeft, width: (duration - trimEnd) * pps }} />
-            )}
-          </div>
+          {/* ── Multi-track rows ── */}
+          {tracks.map((track) => (
+            <TimelineTrackComponent
+              key={track.id}
+              track={track}
+              clips={clips.filter((c) => c.trackId === track.id)}
+              pixelsPerSecond={pps}
+              trackWidth={trackWidth}
+              selectedClipId={selectedClipId}
+              onSelectClip={setSelectedClipId}
+              onDeleteClip={onDeleteClip}
+              onToggleMute={onSetTrackMuted}
+              onToggleLock={onSetTrackLocked}
+              onRemoveTrack={onRemoveTrack}
+            />
+          ))}
 
-          {/* ── Trim handles (In/Out points) ── */}
+          {/* ── Trim handles overlaid on track content area ── */}
           <div
             className="tl-trim-handle tl-trim-in"
-            style={{ left: trimInLeft, top: RULER_H + MARKER_H, height: TRACK_H + AUDIO_TRACK_H }}
+            style={{
+              left: trimInLeft + TRACK_HEADER_W,
+              top: RULER_H + MARKER_H,
+              height: tracksH,
+              position: 'absolute',
+            }}
             title={`In point: ${formatTime(trimStart)}`}
           />
           <div
             className="tl-trim-handle tl-trim-out"
-            style={{ left: trimOutLeft, top: RULER_H + MARKER_H, height: TRACK_H + AUDIO_TRACK_H }}
+            style={{
+              left: trimOutLeft + TRACK_HEADER_W,
+              top: RULER_H + MARKER_H,
+              height: tracksH,
+              position: 'absolute',
+            }}
             title={`Out point: ${formatTime(trimEnd)}`}
           />
 
           {/* ── Playhead ── */}
           <div
             className="tl-playhead"
-            style={{ left: playheadLeft, height: totalH }}
+            style={{ left: playheadLeft + TRACK_HEADER_W, height: totalH, position: 'absolute', top: 0 }}
+            aria-hidden="true"
           >
             <div className="tl-playhead-head" />
           </div>

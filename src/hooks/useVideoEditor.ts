@@ -7,9 +7,17 @@ import type {
   AudioTrackSettings,
   AudioCategory,
   TimelineMarker,
+  TimelineTrack,
+  TimelineClip,
+  TrackType,
   AutoReframeAspect,
 } from '../types';
 import { clamp, DEFAULT_LUMETRI, DEFAULT_AUDIO } from '../utils/videoUtils';
+
+const DEFAULT_TRACKS: TimelineTrack[] = [
+  { id: 'v1', type: 'video', name: 'V1', muted: false, locked: false },
+  { id: 'a1', type: 'audio', name: 'A1', muted: false, locked: false },
+];
 
 const initialState: VideoEditorState = {
   file: null,
@@ -27,6 +35,8 @@ const initialState: VideoEditorState = {
   markers: [],
   autoReframe: 'original',
   timelineZoom: 1,
+  tracks: DEFAULT_TRACKS,
+  clips: [],
 };
 
 /**
@@ -273,7 +283,116 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     setState((prev) => ({ ...prev, timelineZoom: clamp(zoom, 0.5, 8) }));
   }, []);
 
-  // ── Reset ─────────────────────────────────────────────────────────────────
+  // ── Multi-track Timeline ──────────────────────────────────────────────────
+
+  const addTrack = useCallback((type: TrackType) => {
+    setState((prev) => {
+      const typeCount = prev.tracks.filter((t) => t.type === type).length + 1;
+      const prefix = type === 'video' ? 'V' : 'A';
+      const id = `${prefix.toLowerCase()}${typeCount}_${Date.now()}`;
+      const track: TimelineTrack = {
+        id,
+        type,
+        name: `${prefix}${typeCount}`,
+        muted: false,
+        locked: false,
+      };
+      return { ...prev, tracks: [...prev.tracks, track] };
+    });
+  }, []);
+
+  const setTrackMuted = useCallback((trackId: string, muted: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((t) => (t.id === trackId ? { ...t, muted } : t)),
+    }));
+  }, []);
+
+  const setTrackLocked = useCallback((trackId: string, locked: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((t) => (t.id === trackId ? { ...t, locked } : t)),
+    }));
+  }, []);
+
+  const removeTrack = useCallback((trackId: string) => {
+    setState((prev) => ({
+      ...prev,
+      tracks: prev.tracks.filter((t) => t.id !== trackId),
+      clips: prev.clips.filter((c) => c.trackId !== trackId),
+    }));
+  }, []);
+
+  const addClip = useCallback(
+    (trackId: string, src: string, inPoint: number, outPoint: number, startTime: number) => {
+      setState((prev) => {
+        const track = prev.tracks.find((t) => t.id === trackId);
+        if (!track || track.locked) return prev;
+        const clipDuration = outPoint - inPoint;
+        const clip: TimelineClip = {
+          id: `clip_${Date.now()}`,
+          src,
+          trackId,
+          startTime,
+          endTime: startTime + clipDuration,
+          inPoint,
+          outPoint,
+        };
+        return { ...prev, clips: [...prev.clips, clip] };
+      });
+    },
+    []
+  );
+
+  const moveClip = useCallback(
+    (clipId: string, newTrackId: string, newStartTime: number) => {
+      setState((prev) => {
+        const clip = prev.clips.find((c) => c.id === clipId);
+        const targetTrack = prev.tracks.find((t) => t.id === newTrackId);
+        if (!clip || !targetTrack || targetTrack.locked) return prev;
+        const duration = clip.endTime - clip.startTime;
+        return {
+          ...prev,
+          clips: prev.clips.map((c) =>
+            c.id === clipId
+              ? { ...c, trackId: newTrackId, startTime: newStartTime, endTime: newStartTime + duration }
+              : c
+          ),
+        };
+      });
+    },
+    []
+  );
+
+  const splitClip = useCallback((clipId: string, atTime: number) => {
+    setState((prev) => {
+      const clip = prev.clips.find((c) => c.id === clipId);
+      if (!clip) return prev;
+      if (atTime <= clip.startTime || atTime >= clip.endTime) return prev;
+      const splitOffset = atTime - clip.startTime;
+      const firstHalf: TimelineClip = {
+        ...clip,
+        endTime: atTime,
+        outPoint: clip.inPoint + splitOffset,
+      };
+      const secondHalf: TimelineClip = {
+        ...clip,
+        id: `clip_${Date.now()}`,
+        startTime: atTime,
+        inPoint: clip.inPoint + splitOffset,
+      };
+      return {
+        ...prev,
+        clips: prev.clips.map((c) => (c.id === clipId ? firstHalf : c)).concat(secondHalf),
+      };
+    });
+  }, []);
+
+  const deleteClip = useCallback((clipId: string) => {
+    setState((prev) => ({ ...prev, clips: prev.clips.filter((c) => c.id !== clipId) }));
+  }, []);
+
+
 
   const resetVideo = useCallback((videoUrl: string | null) => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
@@ -316,6 +435,15 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     setAutoReframe,
     // Timeline zoom
     setTimelineZoom,
+    // Multi-track timeline
+    addTrack,
+    setTrackMuted,
+    setTrackLocked,
+    removeTrack,
+    addClip,
+    moveClip,
+    splitClip,
+    deleteClip,
     // Reset
     resetVideo,
   };

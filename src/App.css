@@ -1416,3 +1416,122 @@
   width: 280px;
   min-width: 280px;
 }
+
+/* ── Multi-track Timeline ─────────────────────────────────────────────────── */
+.pro-tl-content-multitrack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.tl-multitrack-row {
+  display: flex;
+  width: 100%;
+}
+
+.tl-multitrack-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  background: #1e1e1e;
+  border-top: 1px solid #252525;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.tl-track-muted { opacity: 0.45; }
+.tl-track-locked { pointer-events: none; filter: grayscale(0.6); }
+
+.tl-hd-btn {
+  padding: 1px 3px;
+  font-size: 8px;
+  background: transparent;
+  border: 1px solid #333;
+  border-radius: 2px;
+  color: #666;
+  cursor: pointer;
+  line-height: 1;
+}
+.tl-hd-btn:hover { background: #252525; color: #aaa; }
+.tl-hd-btn.active { background: #1e1630; border-color: #7c5cbf; color: #c9a9f0; }
+.tl-hd-remove { color: #c55; border-color: #522; }
+.tl-hd-remove:hover { background: #2a1010; color: #f88; }
+
+/* ── Clip blocks ──────────────────────────────────────────────────────────── */
+.tl-clip {
+  position: absolute;
+  top: 2px;
+  background: #2a3a5a;
+  border: 1px solid #3a5070;
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.12s;
+  display: flex;
+  align-items: center;
+}
+.tl-clip:hover { border-color: #5a80b0; }
+.tl-clip-selected { border-color: #7faff0 !important; box-shadow: 0 0 0 1px #5580e0; }
+
+/* ── Timeline Ruler playhead marker ──────────────────────────────────────── */
+.tl-ruler-playhead {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  background: rgba(255, 100, 100, 0.6);
+  pointer-events: none;
+}
+
+/* ── Video Scopes Panel ───────────────────────────────────────────────────── */
+.video-scopes-panel {
+  background: #141414;
+  border-top: 1px solid #252525;
+  padding: 6px 8px;
+}
+
+.scopes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.scopes-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.scopes-mode-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.scope-tab {
+  padding: 2px 8px;
+  font-size: 9px;
+  border: 1px solid #2a2a2a;
+  border-radius: 3px;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.scope-tab:hover { background: #1e1e1e; color: #aaa; }
+.scope-tab.active { background: #1a2030; border-color: #3a5080; color: #7fa0d0; }
+
+.scopes-canvas-area {
+  display: flex;
+  justify-content: center;
+}
+
+.scope-canvas {
+  display: block;
+  border-radius: 3px;
+  border: 1px solid #222;
+  image-rendering: pixelated;
+}

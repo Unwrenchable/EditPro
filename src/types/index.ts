@@ -68,6 +68,38 @@ export interface TimelineMarker {
   color: 'red' | 'yellow' | 'green' | 'blue';
 }
 
+// ── Multi-Track Timeline ────────────────────────────────────────────────────
+
+export type TrackType = 'video' | 'audio';
+
+export interface TimelineTrack {
+  id: string;
+  type: TrackType;
+  name: string;
+  muted: boolean;
+  locked: boolean;
+}
+
+export interface TimelineClip {
+  id: string;
+  src: string;
+  trackId: string;
+  startTime: number;
+  endTime: number;
+  inPoint: number;
+  outPoint: number;
+}
+
+// ── Audio Clips ─────────────────────────────────────────────────────────────
+
+export interface AudioClip {
+  id: string;
+  src: string;
+  trackId: string;
+  startTime: number;
+  endTime: number;
+}
+
 // ── Auto Reframe & Export ───────────────────────────────────────────────────
 
 export type AutoReframeAspect = '16:9' | '9:16' | '1:1' | '4:5' | '4:3' | 'original';
@@ -163,6 +195,10 @@ export interface VideoEditorState {
   autoReframe: AutoReframeAspect;
   /** Timeline zoom level (0.5 – 8) */
   timelineZoom: number;
+  /** Multi-track timeline tracks */
+  tracks: TimelineTrack[];
+  /** Multi-track timeline clips */
+  clips: TimelineClip[];
 }
 
 export interface ExportOptions {
