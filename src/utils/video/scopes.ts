@@ -25,9 +25,9 @@ export interface WaveformData {
 
 /** A single point in the vectorscope (Cb/Cr chrominance coordinates) */
 export interface VectorscopePoint {
-  /** Cb component, normalised to -1..1 */
+  /** Cb component, normalized to -1..1 */
   cb: number;
-  /** Cr component, normalised to -1..1 */
+  /** Cr component, normalized to -1..1 */
   cr: number;
   /** Pixel density weight (number of source pixels mapped to this bucket) */
   weight: number;
@@ -48,11 +48,12 @@ function rgbToLuma(r: number, g: number, b: number): number {
   return 0.299 * r + 0.587 * g + 0.114 * b;
 }
 
-/** Convert 0-255 RGB to normalised Cb/Cr chrominance (-1..1) */
+/** Convert 0-255 RGB to normalized Cb/Cr chrominance (-1..1) */
 function rgbToCbCr(r: number, g: number, b: number): { cb: number; cr: number } {
   // ITU-R BT.601 digital coefficients (full range)
-  const cb = (b - rgbToLuma(r, g, b)) / 226.0; // -1..1
-  const cr = (r - rgbToLuma(r, g, b)) / 179.0; // -1..1
+  const luma = rgbToLuma(r, g, b);
+  const cb = (b - luma) / 226.0; // -1..1
+  const cr = (r - luma) / 179.0; // -1..1
   return { cb, cr };
 }
 

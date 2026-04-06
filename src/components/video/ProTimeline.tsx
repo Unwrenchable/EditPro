@@ -208,7 +208,6 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
               left: trimInLeft + TRACK_HEADER_W,
               top: RULER_H + MARKER_H,
               height: tracksH,
-              position: 'absolute',
             }}
             title={`In point: ${formatTime(trimStart)}`}
           />
@@ -218,7 +217,6 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
               left: trimOutLeft + TRACK_HEADER_W,
               top: RULER_H + MARKER_H,
               height: tracksH,
-              position: 'absolute',
             }}
             title={`Out point: ${formatTime(trimEnd)}`}
           />
@@ -226,7 +224,7 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
           {/* ── Playhead ── */}
           <div
             className="tl-playhead"
-            style={{ left: playheadLeft + TRACK_HEADER_W, height: totalH, position: 'absolute', top: 0 }}
+            style={{ left: playheadLeft + TRACK_HEADER_W, height: totalH, top: 0 }}
             aria-hidden="true"
           >
             <div className="tl-playhead-head" />

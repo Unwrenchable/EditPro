@@ -100,7 +100,7 @@ const VideoScopesPanel: React.FC<VideoScopesPanelProps> = ({ videoRef }) => {
     ctx.arc(VECTOR_SIZE / 2, VECTOR_SIZE / 2, VECTOR_SIZE * 0.45, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Find max weight for normalisation
+    // Find max weight for normalization
     const maxW = vs.points.reduce((m, p) => Math.max(m, p.weight), 1);
 
     // Draw bucketed points
