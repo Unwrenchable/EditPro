@@ -4,6 +4,7 @@ import VideoDropZone from './VideoDropZone';
 import ProTimeline from './ProTimeline';
 import VideoControls from './VideoControls';
 import VideoAdjustmentPanel from './VideoAdjustmentPanel';
+import VideoScopesPanel from './VideoScopesPanel';
 import { buildLumetriFilter, getAutoReframeOverlay } from '../../utils/videoUtils';
 import { formatFileSize } from '../../utils/imageFilters';
 import type { VideoExportOptions } from '../../types';
@@ -145,6 +146,12 @@ const VideoEditor: React.FC = () => {
   const handleStepForward    = useCallback(() => editor.stepFrame(1),                     [editor]);
   const handleSkipBack       = useCallback(() => editor.skip(-10),                        [editor]);
   const handleSkipForward    = useCallback(() => editor.skip(10),                         [editor]);
+  const handleAddTrack       = useCallback((type: Parameters<typeof editor.addTrack>[0]) => editor.addTrack(type), [editor]);
+  const handleSetTrackMuted  = useCallback((id: string, m: boolean) => editor.setTrackMuted(id, m), [editor]);
+  const handleSetTrackLocked = useCallback((id: string, l: boolean) => editor.setTrackLocked(id, l), [editor]);
+  const handleRemoveTrack    = useCallback((id: string) => editor.removeTrack(id), [editor]);
+  const handleDeleteClip     = useCallback((id: string) => editor.deleteClip(id), [editor]);
+  const handleSplitClip      = useCallback((id: string, t: number) => editor.splitClip(id, t), [editor]);
   const handleDetectScenes   = useCallback(() => {
     // Simulated scene detection: add markers at regular intervals
     const interval = Math.max(state.duration / 8, 2);
@@ -257,6 +264,9 @@ const VideoEditor: React.FC = () => {
               onSkipForward={handleSkipForward}
               onAddMarker={handleAddMarker}
             />
+
+            {/* ── Video Scopes ── */}
+            <VideoScopesPanel videoRef={videoRef} />
           </div>
         )}
 
@@ -267,6 +277,8 @@ const VideoEditor: React.FC = () => {
           trimStart={state.trimStart}
           trimEnd={state.trimEnd}
           markers={state.markers}
+          tracks={state.tracks}
+          clips={state.clips}
           zoom={state.timelineZoom}
           hasVideo={!!state.videoUrl}
           onSeek={handleSeek}
@@ -275,6 +287,12 @@ const VideoEditor: React.FC = () => {
           onZoomChange={handleZoom}
           onAddMarker={handleAddMarker}
           onRemoveMarker={handleRemoveMarker}
+          onAddTrack={handleAddTrack}
+          onSetTrackMuted={handleSetTrackMuted}
+          onSetTrackLocked={handleSetTrackLocked}
+          onRemoveTrack={handleRemoveTrack}
+          onDeleteClip={handleDeleteClip}
+          onSplitClip={handleSplitClip}
         />
 
         {state.file && (
