@@ -6,7 +6,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "concurrently -k \"cross-env NODE_ENV=development vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron dist-electron/main.js\"",
+    "dev:electron": "tsc -p electron/tsconfig.json && concurrently -k \"cross-env NODE_ENV=development vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron dist-electron/main.js\"",
     "build": "tsc -b && vite build",
     "build:electron": "npm run build && tsc -p electron/tsconfig.json",
     "dist": "npm run build:electron && electron-builder --publish never",
