@@ -7,7 +7,7 @@ import VideoAdjustmentPanel from './VideoAdjustmentPanel';
 import VideoScopesPanel from './VideoScopesPanel';
 import { buildLumetriFilter, getAutoReframeOverlay } from '../../utils/videoUtils';
 import { formatFileSize } from '../../utils/imageFilters';
-import type { VideoExportOptions } from '../../types';
+import type { VideoExportOptions, MagicMoviePlan } from '../../types';
 
 // ── Video Export Modal ────────────────────────────────────────────────────────
 
@@ -109,13 +109,48 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({ file, onClose }) =>
 
 // ── VideoEditor ───────────────────────────────────────────────────────────────
 
-const VideoEditor: React.FC = () => {
+interface VideoEditorProps {
+  /** When provided (coming from Magic Movie mode), this plan is applied once the video loads. */
+  initialMagicPlan?: MagicMoviePlan;
+  /** When provided, this file is loaded automatically on mount. */
+  initialFile?: File;
+}
+
+const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile }) => {
   // Component owns the video ref (correct React pattern per react-hooks/refs)
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const editor = useVideoEditor(videoRef);
   const { state } = editor;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showExportModal, setShowExportModal] = useState(false);
+
+  // ── Magic Movie bootstrap ──────────────────────────────────────────────────
+  // Load the initial file on mount if provided (e.g. coming from Magic Movie).
+  // `initialFile` and `editor.loadVideo` are both stable references for the
+  // lifetime of this component instance (key-based remount in App).
+  useEffect(() => {
+    if (initialFile) {
+      editor.loadVideo(initialFile);
+    }
+  }, [initialFile, editor]);
+
+  // Apply the magic plan once the video has loaded (duration becomes > 0)
+  const magicAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!initialMagicPlan || !state.duration || magicAppliedRef.current) return;
+    magicAppliedRef.current = true;
+
+    editor.setLumetri(initialMagicPlan.lumetri);
+    editor.setAudio(initialMagicPlan.audio);
+    editor.setAutoReframe(initialMagicPlan.autoReframe);
+    if (initialMagicPlan.playbackRate !== 1) {
+      editor.setPlaybackRate(initialMagicPlan.playbackRate);
+    }
+    initialMagicPlan.scenes.forEach((scene) => {
+      const t = scene.startPct * state.duration;
+      editor.addMarker(t, scene.label, scene.color);
+    });
+  }, [state.duration, initialMagicPlan, editor]);
 
   const videoFilter = buildLumetriFilter(state.lumetri);
   const reframeOverlay = getAutoReframeOverlay(state.autoReframe);

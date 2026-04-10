@@ -241,11 +241,19 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     []
   );
 
+  const setLumetri = useCallback((lumetri: LumetriColor) => {
+    setState((prev) => ({ ...prev, lumetri }));
+  }, []);
+
   const resetLumetri = useCallback(() => {
     setState((prev) => ({ ...prev, lumetri: DEFAULT_LUMETRI }));
   }, []);
 
   // ── Essential Sound ───────────────────────────────────────────────────────
+
+  const setAudio = useCallback((audio: AudioTrackSettings) => {
+    setState((prev) => ({ ...prev, audio }));
+  }, []);
 
   const updateAudio = useCallback(
     (key: keyof AudioTrackSettings, value: number | boolean | AudioCategory) => {
@@ -422,11 +430,13 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     setVolume,
     toggleMute,
     // Lumetri
+    setLumetri,
     updateLumetriBasic,
     updateLumetriCurves,
     updateColorWheel,
     resetLumetri,
     // Essential Sound
+    setAudio,
     updateAudio,
     // Markers
     addMarker,

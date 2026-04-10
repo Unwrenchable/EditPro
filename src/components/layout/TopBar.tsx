@@ -31,6 +31,13 @@ const TopBar: React.FC<TopBarProps> = ({ mode, onModeChange, onExport, canExport
         >
           <span className="mode-icon">🎬</span> Video
         </button>
+        <button
+          className={`mode-btn mode-btn--magic ${mode === 'magic' ? 'active' : ''}`}
+          onClick={() => onModeChange('magic')}
+          aria-pressed={mode === 'magic'}
+        >
+          <span className="mode-icon">✨</span> Magic Movie
+        </button>
       </nav>
 
       <div className="topbar-actions">
