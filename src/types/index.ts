@@ -1,4 +1,46 @@
-export type EditorMode = 'photo' | 'video';
+export type EditorMode = 'photo' | 'video' | 'magic';
+
+// ── Magic Movie ──────────────────────────────────────────────────────────────
+
+export type MagicMovieStyle =
+  | 'cinematic'
+  | 'travel'
+  | 'action'
+  | 'documentary'
+  | 'wedding'
+  | 'social'
+  | 'dramatic'
+  | 'vintage';
+
+export interface MagicMovieScene {
+  label: string;
+  /** fraction of total video duration where this scene starts (0–1) */
+  startPct: number;
+  /** fraction of total video duration where this scene ends (0–1) */
+  endPct: number;
+  description: string;
+  color: 'red' | 'yellow' | 'green' | 'blue';
+}
+
+export interface MagicMoviePlan {
+  title: string;
+  style: MagicMovieStyle;
+  description: string;
+  lumetri: LumetriColor;
+  audio: AudioTrackSettings;
+  autoReframe: AutoReframeAspect;
+  scenes: MagicMovieScene[];
+  playbackRate: number;
+}
+
+export interface MagicMovieState {
+  prompt: string;
+  style: MagicMovieStyle | null;
+  status: 'idle' | 'generating' | 'ready' | 'applied';
+  generationStep: number;
+  plan: MagicMoviePlan | null;
+  error: string | null;
+}
 
 // ── Lumetri Color ───────────────────────────────────────────────────────────
 

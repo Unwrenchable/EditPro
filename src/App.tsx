@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import TopBar from './components/layout/TopBar';
 import VideoEditor from './components/video/VideoEditor';
+import MagicMovieView from './components/magic/MagicMovieView';
 import { usePhotoEditor } from './hooks/usePhotoEditor';
 import PhotoDropZone from './components/photo/PhotoDropZone';
 import PhotoAdjustmentPanel from './components/photo/PhotoAdjustmentPanel';
 import { formatFileSize } from './utils/imageFilters';
-import type { EditorMode, ExportOptions } from './types';
+import type { EditorMode, ExportOptions, MagicMoviePlan } from './types';
 import './App.css';
 
 // ─── Export Modal ────────────────────────────────────────────────────────────
@@ -131,19 +132,38 @@ const PhotoEditorView: React.FC<PhotoEditorViewProps> = ({
 
 // ─── App Root ────────────────────────────────────────────────────────────────
 
+interface MagicMovieResult {
+  file: File;
+  plan: MagicMoviePlan;
+}
+
 const App: React.FC = () => {
   const [mode, setMode] = useState<EditorMode>('photo');
   const [showExport, setShowExport] = useState(false);
   const [photoLoaded, setPhotoLoaded] = useState(false);
+  const [magicResult, setMagicResult] = useState<MagicMovieResult | null>(null);
+  // Bump this key to force VideoEditor to remount when a new magic plan is applied
+  const [videoKey, setVideoKey] = useState(0);
+
+  const handleModeChange = useCallback(
+    (m: EditorMode) => {
+      setMode(m);
+      setShowExport(false);
+    },
+    []
+  );
+
+  const handleMagicApply = useCallback((file: File, plan: MagicMoviePlan) => {
+    setMagicResult({ file, plan });
+    setVideoKey((k) => k + 1);
+    setMode('video');
+  }, []);
 
   return (
     <div className="app">
       <TopBar
         mode={mode}
-        onModeChange={(m) => {
-          setMode(m);
-          setShowExport(false);
-        }}
+        onModeChange={handleModeChange}
         onExport={() => setShowExport(true)}
         canExport={mode === 'photo' && photoLoaded}
       />
@@ -154,8 +174,14 @@ const App: React.FC = () => {
             onExportClose={() => setShowExport(false)}
             onLoadedChange={setPhotoLoaded}
           />
+        ) : mode === 'magic' ? (
+          <MagicMovieView onApply={handleMagicApply} />
         ) : (
-          <VideoEditor />
+          <VideoEditor
+            key={videoKey}
+            initialMagicPlan={magicResult?.plan}
+            initialFile={magicResult?.file}
+          />
         )}
       </main>
     </div>
