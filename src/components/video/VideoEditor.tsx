@@ -125,14 +125,14 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile
   const [showExportModal, setShowExportModal] = useState(false);
 
   // ── Magic Movie bootstrap ──────────────────────────────────────────────────
-  // Load the initial file on mount if provided (e.g. coming from Magic Movie)
+  // Load the initial file on mount if provided (e.g. coming from Magic Movie).
+  // `initialFile` and `editor.loadVideo` are both stable references for the
+  // lifetime of this component instance (key-based remount in App).
   useEffect(() => {
     if (initialFile) {
       editor.loadVideo(initialFile);
     }
-    // Run only once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialFile, editor]);
 
   // Apply the magic plan once the video has loaded (duration becomes > 0)
   const magicAppliedRef = useRef(false);

@@ -46,7 +46,7 @@ const LumetriSwatch: React.FC<LumetriSwatchProps> = ({ plan }) => {
 
   return (
     <div className="mm-swatch" style={{ '--mm-accent': meta.accentColor } as React.CSSProperties}>
-      <div className="mm-swatch-title">Colour Profile</div>
+      <div className="mm-swatch-title">Color Profile</div>
       <div className="mm-swatch-row">
         <span className="mm-swatch-bar-label">Warmth</span>
         <div className="mm-swatch-track">
@@ -332,10 +332,10 @@ const MagicMovieView: React.FC<MagicMovieViewProps> = ({ onApply }) => {
       <div className="mm-hero">
         <div className="mm-hero-icon" aria-hidden="true">✦</div>
         <h1 className="mm-hero-title">Magic Movie</h1>
-        <p className="mm-hero-subtitle">
-          Describe your vision — AI will craft the colour grade, scene structure and audio
+        <div className="mm-hero-subtitle">
+          Describe your vision — AI will craft the color grade, scene structure and audio
           settings to bring it to life.
-        </p>
+        </div>
       </div>
 
       <div className="mm-prompt-area">
@@ -347,7 +347,7 @@ const MagicMovieView: React.FC<MagicMovieViewProps> = ({ onApply }) => {
           className="mm-prompt-input"
           placeholder={
             'e.g. "Epic cinematic travel video through the mountains" or\n' +
-            '"Fast-paced sports highlight reel with punchy colour"'
+            '"Fast-paced sports highlight reel with punchy color"'
           }
           value={state.prompt}
           onChange={(e) => magic.setPrompt(e.target.value)}

@@ -300,7 +300,7 @@ function generateTitle(prompt: string, style: MagicMovieStyle): string {
   const trimmed = prompt.trim();
   if (!trimmed) return `${MAGIC_STYLE_META[style].label} Magic Movie`;
 
-  // Capitalise first letter, truncate if too long
+// Capitalise first letter, truncate if too long
   const base = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
   return base.length > 50 ? base.slice(0, 47) + '…' : base;
 }
@@ -364,7 +364,7 @@ export function generatePlan(prompt: string, forcedStyle?: MagicMovieStyle): Mag
 export const GENERATION_STEPS: string[] = [
   'Analysing your vision…',
   'Detecting mood and style…',
-  'Crafting your colour palette…',
+  'Crafting your color palette…',
   'Building scene structure…',
   'Tuning audio settings…',
   'Composing your Magic Movie…',
