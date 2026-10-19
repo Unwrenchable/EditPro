@@ -2249,3 +2249,172 @@
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* ── Welcome, settings, about, updates ─────────────────────────────────── */
+.welcome-overlay,
+.shell-overlay,
+.update-overlay {
+  z-index: 140;
+}
+
+.shell-overlay {
+  z-index: 160;
+}
+
+.update-overlay {
+  z-index: 180;
+}
+
+.welcome-modal,
+.settings-modal,
+.about-modal,
+.update-modal {
+  width: min(560px, 94vw);
+}
+
+.welcome-kicker {
+  margin: 0 0 6px;
+  color: #a97de8;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.welcome-title {
+  margin-bottom: 8px;
+}
+
+.welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.welcome-card {
+  background: #181818;
+  border: 1px solid #2c2c2c;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.welcome-card h3 {
+  margin: 0 0 6px;
+  color: #f2f2f2;
+  font-size: 13px;
+}
+
+.welcome-card p,
+.welcome-note {
+  margin: 0;
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.welcome-log {
+  margin-top: 8px;
+}
+
+.about-version {
+  margin: -8px 0 12px;
+  color: #f3f3f3;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid #2a2a2a;
+}
+
+.setting-title {
+  display: block;
+  color: #eee;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.setting-help {
+  display: block;
+  margin-top: 2px;
+  color: #888;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.setting-row input[type='checkbox'] {
+  appearance: none;
+  width: 40px;
+  height: 22px;
+  margin: 0;
+  border-radius: 99px;
+  background: #333;
+  border: 1px solid #444;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.setting-row input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #c8c8c8;
+  transition: transform 0.15s ease;
+}
+
+.setting-row input[type='checkbox']:checked {
+  background: #7c5cbf;
+  border-color: #7c5cbf;
+}
+
+.setting-row input[type='checkbox']:checked::after {
+  transform: translateX(18px);
+  background: #fff;
+}
+
+.setting-row input[type='checkbox']:focus-visible {
+  outline: 2px solid #a97de8;
+  outline-offset: 2px;
+}
+
+.update-notes {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0 0 14px;
+  padding: 12px;
+  background: #161616;
+  border: 1px solid #2c2c2c;
+  border-radius: 8px;
+  color: #c8c8c8;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.update-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.update-actions-quiet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-right: auto;
+}
+
+@media (max-width: 720px) {
+  .welcome-grid {
+    grid-template-columns: 1fr;
+  }
+}

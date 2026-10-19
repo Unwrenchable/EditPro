@@ -27,6 +27,8 @@ const MENU_CHANNELS = [
   'menu:undo',
   'menu:redo',
   'menu:resetAdjustments',
+  'menu:settings',
+  'menu:about',
 ] as const;
 type MenuChannel = (typeof MENU_CHANNELS)[number];
 
@@ -137,6 +139,36 @@ contextBridge.exposeInMainWorld('editpro', {
 
   /** Returns the OS platform string ('darwin' | 'win32' | 'linux'). */
   getPlatform: (): Promise<string> => ipcRenderer.invoke('app:getPlatform'),
+
+  /** Open an https or mailto URL in the system handler. The main process rejects anything else. */
+  openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('shell:openExternal', url),
+
+  getPreferences: () => ipcRenderer.invoke('prefs:get'),
+
+  setPreferences: (patch: unknown) => ipcRenderer.invoke('prefs:set', patch),
+
+  getUpdateState: () => ipcRenderer.invoke('updates:getState'),
+
+  onUpdateState: (listener: (dialog: unknown) => void) => {
+    if (typeof listener !== 'function') throw new Error('Invalid update subscription');
+    const wrapped = (_event: unknown, payload: unknown) => listener(payload);
+    ipcRenderer.on('updates:state', wrapped);
+    return () => ipcRenderer.removeListener('updates:state', wrapped);
+  },
+
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+
+  downloadUpdate: () => ipcRenderer.invoke('updates:download'),
+
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
+
+  skipUpdate: (version: string) => ipcRenderer.invoke('updates:skip', version),
+
+  remindUpdateLater: () => ipcRenderer.invoke('updates:remind'),
+
+  dismissUpdate: () => ipcRenderer.invoke('updates:dismiss'),
+
+  recordClientError: (report: unknown) => ipcRenderer.invoke('logs:record', report),
 
   /**
    * Listen for menu events sent from the main process.

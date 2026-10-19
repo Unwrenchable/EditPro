@@ -25,6 +25,7 @@ import type { NavigationOptions } from './security.js';
 import { parseExportJob, ExportPlanError, type ExportJob } from './export/plan.js';
 import { cancelAllExports, cancelExportJob, hasActiveExport, runFfmpegExport } from './export/runner.js';
 import { ensureFfmpegExecutable, locateFfmpegBinary } from './export/ffmpegLocate.js';
+import { createDesktopSupport, type DesktopSupport } from './updates/controller.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -48,6 +49,7 @@ protocol.registerSchemesAsPrivileged([
 
 // ── Window management ────────────────────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
+let desktop: DesktopSupport | null = null;
 const fileGrants = new FileAccessGrants();
 
 function devServerPort(): string {
@@ -238,8 +240,16 @@ app.whenReady().then(() => {
   installPermissionHandlers();
   installNavigationGuards();
   bootSession();
+  desktop = createDesktopSupport({
+    getWindow: () => mainWindow,
+    userData: app.getPath('userData'),
+    version: app.getVersion(),
+    isPackaged: app.isPackaged,
+    assertTrusted: assertTrustedIpcSender,
+  });
   buildApplicationMenu();
   createWindow();
+  desktop.startScheduler();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -942,7 +952,15 @@ function buildApplicationMenu() {
           {
             label: 'EditPro',
             submenu: [
-              { role: 'about', label: 'About EditPro' },
+              {
+                label: 'About EditPro',
+                click: () => mainWindow?.webContents.send('menu:about'),
+              },
+              {
+                label: 'Settings…',
+                accelerator: 'CmdOrCtrl+,',
+                click: () => mainWindow?.webContents.send('menu:settings'),
+              },
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
@@ -1059,6 +1077,37 @@ function buildApplicationMenu() {
     {
       role: 'help' as const,
       submenu: [
+        {
+          label: 'Check for Updates…',
+          click: () => {
+            void desktop?.checkForUpdates(true);
+          },
+        },
+        ...(!isMac
+          ? ([
+              {
+                label: 'Settings…',
+                accelerator: 'CmdOrCtrl+,',
+                click: () => mainWindow?.webContents.send('menu:settings'),
+              },
+            ] as Electron.MenuItemConstructorOptions[])
+          : []),
+        { type: 'separator' },
+        {
+          label: 'Open Log File',
+          click: () => {
+            void desktop?.openLogFile();
+          },
+        },
+        { type: 'separator' },
+        ...(!isMac
+          ? ([
+              {
+                label: 'About EditPro',
+                click: () => mainWindow?.webContents.send('menu:about'),
+              },
+            ] as Electron.MenuItemConstructorOptions[])
+          : []),
         {
           label: 'Learn More',
           click: () => {

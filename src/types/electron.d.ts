@@ -3,6 +3,7 @@
  * Available in renderer as `window.editpro`.
  */
 import type { ExportJob } from '../../electron/export/plan';
+import type { AppPreferences, PreferencePatch, UpdateDialogState } from '../../electron/updates/policy';
 import type { RecoveryOffer } from '../utils/sessionStore';
 
 export interface VideoExportEvent {
@@ -31,7 +32,15 @@ export type EditProMenuChannel =
   | 'menu:export'
   | 'menu:undo'
   | 'menu:redo'
-  | 'menu:resetAdjustments';
+  | 'menu:resetAdjustments'
+  | 'menu:settings'
+  | 'menu:about';
+
+export interface ClientErrorReport {
+  message: string;
+  stack?: string;
+  source?: string;
+}
 
 export interface EditProBridge {
   openImage(): Promise<string[] | null>;
@@ -60,7 +69,19 @@ export interface EditProBridge {
   markCleanShutdown(): Promise<boolean>;
   getVersion(): Promise<string>;
   getPlatform(): Promise<string>;
+  openExternal(url: string): Promise<boolean>;
   onMenu(channel: EditProMenuChannel, listener: () => void): () => void;
+  getPreferences(): Promise<AppPreferences>;
+  setPreferences(patch: PreferencePatch): Promise<AppPreferences>;
+  getUpdateState(): Promise<UpdateDialogState>;
+  onUpdateState(listener: (dialog: UpdateDialogState) => void): () => void;
+  checkForUpdates(): Promise<void>;
+  downloadUpdate(): Promise<boolean>;
+  installUpdate(): Promise<boolean>;
+  skipUpdate(version: string): Promise<boolean>;
+  remindUpdateLater(): Promise<boolean>;
+  dismissUpdate(): Promise<boolean>;
+  recordClientError(report: ClientErrorReport): Promise<boolean>;
 }
 
 declare global {
