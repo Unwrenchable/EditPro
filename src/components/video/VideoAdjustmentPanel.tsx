@@ -9,6 +9,7 @@ import type { CreativeState } from '../../utils/video/creative';
 import CreativePanels from './CreativePanels';
 import AudioMixer from './AudioMixer';
 import { PLATFORM_PRESETS, TRANSITION_OPTIONS } from '../../utils/video/exportPlan';
+import OfflineAiPanel from './ai/OfflineAiPanel';
 
 type MainPanel = 'lumetri' | 'sound' | 'effects' | 'ai' | 'export';
 
@@ -41,7 +42,6 @@ interface VideoAdjustmentPanelProps {
   onResetLumetri: () => void;
   onOpenVideo: () => void;
   onExport: (prefs: { platform: VideoExportOptions['platform']; quality: number }) => void;
-  onDetectScenes: () => void;
   transition: VideoTransition;
   onTransitionChange: (transition: VideoTransition) => void;
   creative: CreativeState;
@@ -61,7 +61,7 @@ interface VideoAdjustmentPanelProps {
 const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
   lumetri, audio, autoReframe, videoUrl,
   onLumetriBasicChange, onCurvesChange, onColorWheelChange, onAudioChange,
-  onSetAutoReframe, onResetLumetri, onOpenVideo, onExport, onDetectScenes,
+  onSetAutoReframe, onResetLumetri, onOpenVideo, onExport,
   transition, onTransitionChange,
   creative, tracks, clips, currentTime, duration, onCreativeChange, onSetTrackMuted,
   peaks = [], mediaDuration = 0, trimStart = 0, playbackRate = 1, videoRef,
@@ -217,13 +217,7 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
             ))}
           </div>
 
-          <p className="section-subtitle" style={{ marginTop: 14 }}>Scene Edit Detection</p>
-          <div className="info-box" style={{ marginBottom: 10 }}>
-            <p>Automatically detect cuts in pre-edited footage and split into individual clips on the timeline.</p>
-          </div>
-          <button className="reset-btn" onClick={onDetectScenes} disabled={disabled}>
-            🔍 Detect Scenes
-          </button>
+          <OfflineAiPanel />
 
           <p className="section-subtitle" style={{ marginTop: 14 }}>Enhance Speech</p>
           <div className="info-box">
