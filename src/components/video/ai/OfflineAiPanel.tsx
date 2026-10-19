@@ -3,6 +3,7 @@ import { planRemoval, shiftWords, type TranscriptWord } from '../../../ai/editPl
 import { useEditorSession } from '../../../session/editorSessionContext';
 import type { AiSceneHit, AiStatus, AiTimeRange } from '../../../types/electron';
 import { createTimelineId } from '../../../utils/video/timelineEdit';
+import BackgroundPanel from './BackgroundPanel';
 import CaptionsPanel from './CaptionsPanel';
 import FillerPanel from './FillerPanel';
 import ScenesPanel from './ScenesPanel';
@@ -86,6 +87,13 @@ export default function OfflineAiPanel() {
         </div>
       )}
       <ScenesPanel sourcePath={sourcePath} busy={busy} onMark={markScenes} run={run} />
+      <BackgroundPanel
+        sourcePath={sourcePath}
+        busy={busy}
+        matte={status?.matte ?? null}
+        onRefresh={refresh}
+        run={run}
+      />
       <SilencePanel
         sourcePath={sourcePath}
         busy={busy}

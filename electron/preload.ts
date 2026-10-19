@@ -230,7 +230,7 @@ contextBridge.exposeInMainWorld('editpro', {
 
   aiStatus: () => ipcRenderer.invoke('ai:status'),
 
-  aiDownload: (request: { kind: 'model' | 'cli'; modelId?: string }) =>
+  aiDownload: (request: { kind: 'model' | 'cli' | 'matte'; modelId?: string }) =>
     ipcRenderer.invoke('ai:download', request),
 
   aiCancel: (jobId: string) => ipcRenderer.invoke('ai:cancel', jobId),
@@ -252,6 +252,9 @@ contextBridge.exposeInMainWorld('editpro', {
 
   aiRenderCut: (request: { sourcePath: string; ranges: { start: number; end: number }[] }) =>
     ipcRenderer.invoke('ai:renderCut', request),
+
+  aiRemoveBackground: (request: { sourcePath: string; mode: 'transparent' | 'color'; color: string }) =>
+    ipcRenderer.invoke('ai:removeBackground', request),
 
   onAiEvent: (listener: (event: {
     jobId: string;

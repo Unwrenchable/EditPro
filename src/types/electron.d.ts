@@ -144,6 +144,7 @@ export interface AiStatus {
   arch: string;
   whisperCli: boolean;
   models: AiModelStatus[];
+  matte: AiModelStatus;
 }
 
 export interface AiSceneHit {
@@ -202,7 +203,7 @@ export interface EditProBridge {
   dismissUpdate(): Promise<boolean>;
   recordClientError(report: ClientErrorReport): Promise<boolean>;
   aiStatus(): Promise<AiStatus>;
-  aiDownload(request: { kind: 'model' | 'cli'; modelId?: string }): Promise<{ ready: boolean }>;
+  aiDownload(request: { kind: 'model' | 'cli' | 'matte'; modelId?: string }): Promise<{ ready: boolean }>;
   aiCancel(jobId: string): Promise<boolean>;
   aiDetectSilence(request: {
     sourcePath: string;
@@ -215,6 +216,11 @@ export interface EditProBridge {
   aiSaveCaptions(request: { cues: AiCaptionCue[]; format: 'srt' | 'vtt' }): Promise<{ outputPath: string | null }>;
   aiBurnCaptions(request: { sourcePath: string; cues: AiCaptionCue[] }): Promise<{ outputPath: string | null }>;
   aiRenderCut(request: { sourcePath: string; ranges: AiTimeRange[] }): Promise<{ outputPath: string | null }>;
+  aiRemoveBackground(request: {
+    sourcePath: string;
+    mode: 'transparent' | 'color';
+    color: string;
+  }): Promise<{ outputPath: string | null }>;
   onAiEvent(listener: (event: AiEvent) => void): () => void;
 }
 

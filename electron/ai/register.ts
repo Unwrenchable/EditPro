@@ -4,12 +4,16 @@
  */
 import fs from 'node:fs/promises';
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { ensureMatteModel, matteModelPath, removeBackground } from './background/run.js';
 import { formatSrt, formatVtt } from './captions/format.js';
 import { burnCaptions, ensureWhisperCli, ensureWhisperModel, speechStatus, transcribeSource } from './captions/run.js';
+import { MATTE_MODEL } from './catalog.js';
 import { renderCut } from './cuts/run.js';
+import { fileSized } from './download.js';
 import type { AiHost, SavePick } from './host.js';
 import { cancelAiJob, cancelAllAiJobs, withAiJob } from './jobs.js';
 import {
+  parseBackgroundRequest,
   parseCaptionFormat,
   parseCues,
   parseCutRequest,
@@ -45,6 +49,12 @@ export function registerOfflineAi(host: AiHost): void {
       arch: host.arch,
       whisperCli: speech.cli,
       models: speech.models,
+      matte: {
+        id: MATTE_MODEL.id,
+        label: MATTE_MODEL.label,
+        bytes: MATTE_MODEL.bytes,
+        ready: await fileSized(matteModelPath(host.userData()), MATTE_MODEL.bytes),
+      },
     };
   });
 
@@ -93,8 +103,14 @@ export function registerOfflineAi(host: AiHost): void {
   ipcMain.handle('ai:download', async (event, payload: unknown) => {
     host.assertTrusted(event);
     const request = parseDownloadRequest(payload);
-    if (request.kind === 'matte') throw new Error('Unknown download');
     return withAiJob(host, event, async ({ signal, progress }) => {
+      if (request.kind === 'matte') {
+        await ensureMatteModel(host.userData(), {
+          signal,
+          onProgress: (loaded, total) => progress(total ? (loaded / total) * 100 : 10, 'Downloading the matting model'),
+        });
+        return { ready: true };
+      }
       const paths = { userData: host.userData(), platform: host.platform, arch: host.arch };
       if (request.kind === 'cli') {
         await ensureWhisperCli(paths, {
@@ -191,6 +207,36 @@ export function registerOfflineAi(host: AiHost): void {
         sourcePath,
         outputPath: output,
         ranges: request.ranges,
+        signal,
+        onProgress: progress,
+      });
+      host.grantRead(output);
+      host.persistGrants();
+      return { outputPath: output };
+    });
+  });
+
+  ipcMain.handle('ai:removeBackground', async (event, payload: unknown) => {
+    host.assertTrusted(event);
+    const request = parseBackgroundRequest(payload);
+    const sourcePath = await host.assertReadable(request.sourcePath);
+    const transparent = request.mode === 'transparent';
+    const output = await chosenOutput(host, event, {
+      title: 'Save the matted video',
+      defaultName: transparent ? 'matte.webm' : 'matte.mp4',
+      filters: transparent
+        ? [{ name: 'WebM with alpha', extensions: ['webm'] }]
+        : [{ name: 'MP4 Video', extensions: ['mp4'] }],
+    });
+    if (!output) return { outputPath: null };
+    return withAiJob(host, event, async ({ signal, progress }) => {
+      await removeBackground({
+        ffmpegPath: await host.ffmpegPath(),
+        userData: host.userData(),
+        sourcePath,
+        outputPath: output,
+        mode: request.mode,
+        color: request.color,
         signal,
         onProgress: progress,
       });
