@@ -1,4 +1,5 @@
 import type { CreativeState } from '../utils/video/creative';
+import type { MotionDocument } from '../utils/video/motionGraphics';
 
 export type EditorMode = 'photo' | 'video' | 'magic';
 
@@ -301,6 +302,8 @@ export interface VideoEditorState {
   transition: VideoTransition;
   /** Titles, mixer, grade, LUT, loudness, and the render queue. */
   creative: CreativeState;
+  /** Animated titles and shapes. Independent of clip keyframes. */
+  graphics: MotionDocument;
   /** Absolute path when the file was opened from disk in Electron. */
   sourcePath: string | null;
 }

@@ -16,6 +16,7 @@ import type {
 } from '../types';
 import { DEFAULT_ADJUSTMENTS } from './imageFilters';
 import { createDefaultCreativeState, normalizeCreativeState, type CreativeState } from './video/creative';
+import { createMotionDocument, normalizeMotionDocument, type MotionDocument } from './video/motionGraphics';
 import { DEFAULT_AUDIO, DEFAULT_LUMETRI } from './videoUtils';
 
 const PHOTO_FILTERS: readonly PhotoFilterName[] = [
@@ -85,6 +86,7 @@ export interface VideoEditSnapshot {
   programKeyframes: ClipKeyframe[];
   transition: VideoTransition;
   creative: CreativeState;
+  graphics: MotionDocument;
 }
 
 export interface MediaBinding {
@@ -130,6 +132,7 @@ export function createDefaultVideoEdits(): VideoEditSnapshot {
     programKeyframes: [],
     transition: 'cut',
     creative: createDefaultCreativeState(),
+    graphics: createMotionDocument(),
   };
 }
 
@@ -300,6 +303,7 @@ export function normalizeVideoEdits(input: unknown): VideoEditSnapshot {
     programKeyframes: normalizeKeyframes(record.programKeyframes),
     transition: oneOf(record.transition, TRANSITIONS, 'cut'),
     creative: normalizeCreativeState(record.creative),
+    graphics: normalizeMotionDocument(record.graphics),
   };
 }
 

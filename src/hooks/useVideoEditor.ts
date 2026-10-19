@@ -30,6 +30,7 @@ import {
 } from '../utils/history';
 import { fileMediaPath, revokeIfBlob } from '../utils/mediaFiles';
 import { monitorLinearGain, type CreativeState } from '../utils/video/creative';
+import type { MotionDocument } from '../utils/video/motionGraphics';
 import { removeKeyframe, sampleEffect, updateKeyframe, upsertKeyframe } from '../utils/video/keyframes';
 import { clamp } from '../utils/videoUtils';
 import {
@@ -195,6 +196,7 @@ function toVideoState(model: VideoModel): VideoEditorState {
     shuttleRate: model.shuttle,
     transition: snap.transition,
     creative: snap.creative,
+    graphics: snap.graphics,
     sourcePath: model.mediaPath,
   };
 }
@@ -984,6 +986,10 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, creative }), coalesceKey));
   }, []);
 
+  const setGraphics = useCallback((graphics: MotionDocument, coalesceKey?: string) => {
+    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, graphics }), coalesceKey));
+  }, []);
+
   const applyMagicPlan = useCallback(
     (plan: MagicMoviePlan, duration: number) => {
       const video = videoRef.current;
@@ -1145,6 +1151,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     updateProgramKeyframe,
     removeProgramKeyframe,
     setCreative,
+    setGraphics,
     applyMagicPlan,
     resetVideo,
     undo,

@@ -376,6 +376,7 @@
 }
 
 .playback-stage {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -2728,4 +2729,51 @@
 
 .export-modal {
   width: min(520px, 94vw);
+}
+
+.motion-stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.motion-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: #141414;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+}
+
+.motion-panel h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.motion-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.motion-items button {
+  background: #1c1c1c;
+  color: #eee;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.motion-items button.is-active {
+  border-color: #d4a017;
 }
