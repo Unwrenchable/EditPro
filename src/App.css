@@ -2729,3 +2729,100 @@
 .export-modal {
   width: min(520px, 94vw);
 }
+
+.multicam-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  background: #141414;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+}
+
+.multicam-heading,
+.multicam-heading h2,
+.multicam-cache h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.multicam-live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #bbb;
+}
+
+.multicam-bank {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.multicam-angle {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 148px;
+  flex: 0 0 auto;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #1b1b1b;
+  color: #eee;
+  text-align: left;
+}
+
+.multicam-angle.is-active {
+  border-color: #d4a017;
+  box-shadow: inset 0 0 0 1px #d4a017;
+}
+
+.multicam-angle video {
+  width: 100%;
+  height: 78px;
+  object-fit: cover;
+  background: #000;
+  border-radius: 4px;
+}
+
+.multicam-key {
+  font-size: 10px;
+  color: #d4a017;
+}
+
+.multicam-name,
+.multicam-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.multicam-meta,
+.multicam-cuts {
+  color: #999;
+  font-size: 11px;
+}
+
+.multicam-cuts {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.multicam-cache {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid #2a2a2a;
+  padding-top: 8px;
+}

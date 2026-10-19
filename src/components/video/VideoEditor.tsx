@@ -19,6 +19,8 @@ import { monitorScale, resolutionLabel, selectPreviewUrl } from '../../playback/
 import { usePreviewSrc } from '../../playback/usePreviewSrc';
 import { useProxyMedia } from '../../playback/useProxyMedia';
 import PlaybackSettings from './PlaybackSettings';
+import MulticamPanel from './MulticamPanel';
+import { fileMediaPath } from '../../utils/mediaFiles';
 import type { MagicMoviePlan, VideoEditorState, VideoExportOptions } from '../../types';
 
 function previewLook(state: VideoEditorState, baseFilter: string): {
@@ -313,6 +315,30 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
               onResolution={proxy.setResolution}
               onToggleProxy={proxy.toggleProxy}
               onCancelProxy={proxy.cancel}
+            />
+
+            <MulticamPanel
+              sequence={state.multicam}
+              currentTime={state.currentTime}
+              isPlaying={state.isPlaying}
+              duration={state.duration}
+              frameRate={30}
+              mediaPath={state.mediaPath}
+              mediaName={state.mediaName}
+              mediaMissing={state.mediaMissing}
+              programUrl={state.videoUrl}
+              advice={proxy.advice}
+              onChange={editor.setMulticam}
+              onCommit={editor.commitMulticamCuts}
+              onRelinkFile={(file) => {
+                editor.setMedia({
+                  file,
+                  url: URL.createObjectURL(file),
+                  path: window.editpro?.getPathForFile(file) || fileMediaPath(file),
+                  name: file.name,
+                  missing: false,
+                });
+              }}
             />
 
             {/* ── Transport controls ── */}

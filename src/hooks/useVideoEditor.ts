@@ -31,6 +31,7 @@ import {
 import { fileMediaPath, revokeIfBlob } from '../utils/mediaFiles';
 import { monitorLinearGain, type CreativeState } from '../utils/video/creative';
 import { removeKeyframe, sampleEffect, updateKeyframe, upsertKeyframe } from '../utils/video/keyframes';
+import { multicamTrack, type MulticamSequence } from '../utils/video/multicam';
 import { clamp } from '../utils/videoUtils';
 import {
   advancePlaybackClock,
@@ -195,6 +196,7 @@ function toVideoState(model: VideoModel): VideoEditorState {
     shuttleRate: model.shuttle,
     transition: snap.transition,
     creative: snap.creative,
+    multicam: snap.multicam,
     sourcePath: model.mediaPath,
   };
 }
@@ -984,6 +986,21 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, creative }), coalesceKey));
   }, []);
 
+  const setMulticam = useCallback((multicam: MulticamSequence | null) => {
+    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, multicam })));
+  }, []);
+
+  const commitMulticamCuts = useCallback((clips: TimelineClip[]) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => {
+        const track = multicamTrack();
+        const tracks = snap.tracks.some((item) => item.id === track.id) ? snap.tracks : [...snap.tracks, track];
+        const kept = snap.clips.filter((clip) => clip.trackId !== track.id);
+        return { ...snap, tracks, clips: [...kept, ...clips] };
+      }),
+    );
+  }, []);
+
   const applyMagicPlan = useCallback(
     (plan: MagicMoviePlan, duration: number) => {
       const video = videoRef.current;
@@ -1145,6 +1162,8 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     updateProgramKeyframe,
     removeProgramKeyframe,
     setCreative,
+    setMulticam,
+    commitMulticamCuts,
     applyMagicPlan,
     resetVideo,
     undo,

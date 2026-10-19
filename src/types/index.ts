@@ -1,4 +1,5 @@
 import type { CreativeState } from '../utils/video/creative';
+import type { MulticamSequence } from '../utils/video/multicam';
 
 export type EditorMode = 'photo' | 'video' | 'magic';
 
@@ -301,6 +302,8 @@ export interface VideoEditorState {
   transition: VideoTransition;
   /** Titles, mixer, grade, LUT, loudness, and the render queue. */
   creative: CreativeState;
+  /** Synced camera group. Null when the sequence is a normal timeline. */
+  multicam: MulticamSequence | null;
   /** Absolute path when the file was opened from disk in Electron. */
   sourcePath: string | null;
 }
