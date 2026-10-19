@@ -12,7 +12,7 @@ import ProgramOverlay from './ProgramOverlay';
 import { useWaveformPeaks } from '../../hooks/useWaveformPeaks';
 import { formatFileSize } from '../../utils/imageFilters';
 import { resolveSourcePath } from '../../utils/video/sourcePath';
-import { keyframedCss, sampleTransform } from '../../utils/video/keyframes';
+import { keyframedCss, sampleEffect, sampleTransform } from '../../utils/video/keyframes';
 import { clipAtPlayhead, editPoints, neighborEdit } from '../../utils/video/timelineEdit';
 import { matchNleShortcut, nleActionKind } from '../../utils/video/nleShortcuts';
 import { monitorScale, resolutionLabel, selectPreviewUrl } from '../../playback/frameClock';
@@ -43,15 +43,19 @@ function previewLook(state: VideoEditorState, baseFilter: string): {
   const keys = useClip ? clip?.keyframes : state.programKeyframes;
   const time = useClip && clip ? state.currentTime - clip.startTime : state.currentTime;
   const motion = sampleTransform(keys, time);
+  const effectBrightness = sampleEffect(keys, 'brightness', time);
+  const effectContrast = sampleEffect(keys, 'contrast', time);
+  const effectSaturation = sampleEffect(keys, 'saturation', time);
+  const effectBlur = sampleEffect(keys, 'blur', time);
   const extras = keyframedCss(keys, time).split(' ').filter((part) => part.length > 0);
   const moved = motion.positionX !== 0 || motion.positionY !== 0 || motion.scale !== 1 || motion.rotation !== 0;
   return {
     filter: [baseFilter, ...extras].filter(Boolean).join(' '),
     effectFilter: extras.join(' '),
-    brightness,
-    contrast,
-    saturation,
-    blur,
+    brightness: effectBrightness,
+    contrast: effectContrast,
+    saturation: effectSaturation,
+    blur: effectBlur,
     picture: {
       opacity: motion.opacity,
       transform: moved

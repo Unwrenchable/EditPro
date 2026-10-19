@@ -44,7 +44,14 @@ export function parseDownloadRequest(value: unknown): { kind: 'model' | 'cli' | 
 
 function cleanText(value: unknown): string {
   if (typeof value !== 'string') return '';
-  return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim().slice(0, 400);
+  // Drop C0 controls except tab, LF, and CR. A character class would trip no-control-regex.
+  let cleaned = '';
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    const control = code <= 0x08 || code === 0x0b || code === 0x0c || (code >= 0x0e && code <= 0x1f);
+    if (!control) cleaned += char;
+  }
+  return cleaned.trim().slice(0, 400);
 }
 
 function parseWord(value: unknown, cueId: string, index: number): TranscriptWord | null {

@@ -31,8 +31,22 @@ export default function OfflineAiPanel() {
   }, [setError]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    const bridge = window.editpro;
+    if (!bridge?.aiStatus) return undefined;
+    let active = true;
+    bridge.aiStatus().then(
+      (next) => {
+        if (active) setStatus(next);
+      },
+      (err: unknown) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : 'Could not read the speech models');
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [setError]);
 
   const ripple = useCallback((ranges: AiTimeRange[], nextWords?: TranscriptWord[]) => {
     if (!sourcePath) {
