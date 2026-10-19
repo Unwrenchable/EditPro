@@ -19,6 +19,8 @@ import { monitorScale, resolutionLabel, selectPreviewUrl } from '../../playback/
 import { usePreviewSrc } from '../../playback/usePreviewSrc';
 import { useProxyMedia } from '../../playback/useProxyMedia';
 import PlaybackSettings from './PlaybackSettings';
+import MotionStage from './MotionStage';
+import MotionGraphicsPanel from './MotionGraphicsPanel';
 import type { MagicMoviePlan, VideoEditorState, VideoExportOptions } from '../../types';
 
 function previewLook(state: VideoEditorState, baseFilter: string): {
@@ -268,6 +270,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
                 aria-label="Video preview"
               />
               </ProgramOverlay>
+              <MotionStage document={state.graphics} currentTime={state.currentTime} />
               </div>
               {/* Auto Reframe crop overlay */}
               {reframeOverlay && (
@@ -327,6 +330,12 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
 
             {/* ── Video Scopes ── */}
             <VideoScopesPanel videoRef={videoRef} />
+            <MotionGraphicsPanel
+              document={state.graphics}
+              currentTime={state.currentTime}
+              disabled={!state.videoUrl}
+              onChange={editor.setGraphics}
+            />
           </div>
         )}
 
@@ -454,6 +463,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           tracks={state.tracks}
           programKeyframes={state.programKeyframes}
           creative={state.creative}
+          graphics={state.graphics}
           onCreativeChange={editor.setCreative}
           initialPlatform={exportSeed.platform}
           initialQuality={exportSeed.quality}

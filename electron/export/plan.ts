@@ -31,6 +31,7 @@ import {
 } from './creative.js';
 import { DEFAULT_BEZIER, normalizeBezierHandles } from './easing.js';
 import { motionGraph, prepareKeyframes, type ExportKeyframe } from './motion.js';
+import { motionGraphicFilters, normalizeMotionDocument, type MotionDocument } from './motionGraphics.js';
 
 export { keyframeExpression, motionGraph, prepareKeyframes } from './motion.js';
 export type { ExportEase, ExportKeyframe, ExportKeyframeProperty } from './motion.js';
@@ -169,6 +170,8 @@ export interface ExportJob {
   options: ExportOptions;
   /** Titles, grade, mixer, and per-clip transitions. Omitted on older jobs. */
   creative?: CreativeState;
+  /** Animated titles and shapes. Omitted when the graphics layer is empty. */
+  graphics?: MotionDocument;
 }
 
 export interface ExportPlan {
@@ -777,6 +780,7 @@ export function parseExportJob(input: unknown): ExportJob {
       ...(platform ? { platform } : {}),
     },
     ...(source.creative !== undefined ? { creative: normalizeCreativeState(source.creative) } : {}),
+    ...(source.graphics !== undefined ? { graphics: normalizeMotionDocument(source.graphics) } : {}),
   };
 }
 
@@ -1015,6 +1019,9 @@ function videoBody(
     for (const title of job.creative.titles) {
       creativeFilters.push(...drawtextFilters(title, size, job.trimStart, rate, extras.fontFile ?? null));
     }
+  }
+  if (job.graphics) {
+    creativeFilters.push(...motionGraphicFilters(job.graphics, size, job.trimStart, rate));
   }
   return {
     chain: [
