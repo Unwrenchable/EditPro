@@ -47,6 +47,16 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['@huggingface/transformers', '@ffmpeg/ffmpeg', 'onnxruntime-node', 'onnxruntime-web'],
   },
+  build: webTarget
+    ? {
+        rollupOptions: {
+          input: {
+            main: path.resolve(root, 'index.html'),
+            download: path.resolve(root, 'download.html'),
+          },
+        },
+      }
+    : undefined,
   plugins: [
     react(),
     productionContentSecurityPolicy(),
