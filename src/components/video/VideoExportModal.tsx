@@ -18,6 +18,13 @@ import {
   unwrapIpcError,
   type ExportJob,
 } from '../../utils/video/exportPlan';
+import {
+  selectVideoEncoder,
+  siblingOutputPath,
+  type CreativeState,
+  type DeliveryCodec,
+  type EncoderChoice,
+} from '../../utils/video/creative';
 import { isTrackMuted, timelineClipsForExport } from '../../utils/video/exportClips';
 import { resolveSourcePath } from '../../utils/video/sourcePath';
 
@@ -40,6 +47,8 @@ interface VideoExportModalProps {
   initialQuality: number;
   onTransitionChange: (transition: VideoTransition) => void;
   onClose: () => void;
+  creative?: CreativeState;
+  onCreativeChange?: (creative: CreativeState, coalesceKey?: string) => void;
 }
 
 type Phase = 'idle' | 'rendering' | 'done' | 'error' | 'cancelled';
@@ -80,13 +89,20 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
   initialQuality,
   onTransitionChange,
   onClose,
+  creative,
+  onCreativeChange,
 }) => {
   const preset = PLATFORM_PRESETS.find((item) => item.id === initialPlatform) ?? PLATFORM_PRESETS[0];
   const [platform, setPlatform] = useState(initialPlatform);
   const [resolution, setResolution] = useState<VideoExportOptions['resolution']>(preset.resolution);
   const [frameRate, setFrameRate] = useState<VideoExportOptions['frameRate']>(preset.frameRate);
   const [format, setFormat] = useState<VideoExportOptions['format']>(preset.format);
+  const [codec, setCodec] = useState<DeliveryCodec>(preset.codec);
+  const [encoder, setEncoder] = useState<EncoderChoice>(creative?.encoder ?? 'auto');
+  const [availableEncoders, setAvailableEncoders] = useState<string[]>([]);
+  const [hostPlatform, setHostPlatform] = useState('linux');
   const [quality, setQuality] = useState(initialQuality);
+  const [queueLabel, setQueueLabel] = useState<string | null>(null);
   const [aspect, setAspect] = useState<AutoReframeAspect>(preset.aspect ?? autoReframe);
   const [phase, setPhase] = useState<Phase>('idle');
   const [percent, setPercent] = useState(0);
@@ -100,6 +116,21 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
     phaseRef.current = next;
     setPhase(next);
   };
+
+  useEffect(() => {
+    const bridge = window.editpro;
+    if (!bridge?.listVideoEncoders) return;
+    let cancelled = false;
+    void bridge.listVideoEncoders().then((names) => {
+      if (!cancelled) setAvailableEncoders(names);
+    }).catch(() => undefined);
+    void bridge.getPlatform?.().then((name) => {
+      if (!cancelled && name) setHostPlatform(name);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const bridge = window.editpro;
@@ -146,7 +177,8 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
       transition,
       clips: clipPlan.clips,
       ...(programKeyframes.length > 0 ? { keyframes: programKeyframes } : {}),
-      options: { resolution, frameRate, format, quality },
+      options: { resolution, frameRate, format, quality, codec, encoder, availableEncoders, platform: hostPlatform },
+      ...(creative ? { creative } : {}),
     };
     try {
       return { plan: buildExportPlan(job), error: null as string | null };
@@ -156,6 +188,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
   }, [
     sourcePath, trimStart, trimEnd, playbackRate, volume, muted, tracks,
     lumetri, audio, aspect, transition, clipPlan.clips, programKeyframes, resolution, frameRate, format, quality,
+    codec, encoder, availableEncoders, hostPlatform, creative,
   ]);
 
   const warnings = useMemo(() => {
@@ -175,6 +208,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
     setResolution(match.resolution);
     setFrameRate(match.frameRate);
     setFormat(match.format);
+    setCodec(match.codec);
     if (match.aspect) setAspect(match.aspect);
   };
 
@@ -235,7 +269,8 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
       transition,
       clips: clipPlan.clips,
       ...(programKeyframes.length > 0 ? { keyframes: programKeyframes } : {}),
-      options: { resolution, frameRate, format, quality },
+      options: { resolution, frameRate, format, quality, codec, encoder, availableEncoders, platform: hostPlatform },
+      ...(creative ? { creative } : {}),
     };
 
     setPhaseTracked('rendering');
@@ -262,6 +297,107 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
     }
   };
 
+  const addToQueue = () => {
+    if (!creative || !onCreativeChange) return;
+    const outputName = suggestExportFilename(file?.name ?? 'editpro.mp4', { resolution, frameRate, format });
+    onCreativeChange({
+      ...creative,
+      encoder,
+      renderQueue: [
+        ...creative.renderQueue,
+        { id: newJobId(), presetId: platform, encoder, codec, quality, outputName },
+      ],
+    });
+  };
+
+  const renderQueued = async () => {
+    if (!creative || creative.renderQueue.length === 0) return;
+    const bridge = window.editpro;
+    if (!bridge?.startVideoExport || !bridge.saveVideo) {
+      setPhaseTracked('error');
+      setError('Video export runs in the EditPro desktop app, which bundles ffmpeg. Browser preview cannot write a video file. Start it with npm run dev:electron.');
+      return;
+    }
+    if (!sourcePath) {
+      setPhaseTracked('error');
+      setError('Open a video from disk before exporting.');
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setPhaseTracked('rendering');
+    setPercent(0);
+    let anchor: string | null = null;
+    for (let index = 0; index < creative.renderQueue.length; index += 1) {
+      const item = creative.renderQueue[index];
+      const itemPreset = PLATFORM_PRESETS.find((entry) => entry.id === item.presetId) ?? PLATFORM_PRESETS[0];
+      setQueueLabel(`Rendering ${index + 1} of ${creative.renderQueue.length}: ${item.outputName}`);
+      let chosen: string | null;
+      if (anchor) {
+        chosen = siblingOutputPath(anchor, item.outputName);
+      } else {
+        chosen = await bridge.saveVideo(item.outputName);
+      }
+      if (!chosen) continue;
+      anchor = anchor ?? chosen;
+      const jobId = newJobId();
+      jobIdRef.current = jobId;
+      const queued: ExportJob = {
+        jobId,
+        sourcePath,
+        outputPath: chosen,
+        trimStart,
+        trimEnd,
+        playbackRate,
+        volume,
+        muted,
+        videoTrackMuted: isTrackMuted(tracks, 'v1'),
+        audioTrackMuted: isTrackMuted(tracks, 'a1'),
+        lumetri,
+        audio,
+        autoReframe: itemPreset.aspect ?? aspect,
+        transition,
+        clips: clipPlan.clips,
+        options: {
+          resolution: itemPreset.resolution,
+          frameRate: itemPreset.frameRate,
+          format: itemPreset.format,
+          quality: item.quality,
+          codec: item.codec,
+          encoder: item.encoder,
+          availableEncoders,
+          platform: hostPlatform,
+        },
+        creative,
+      };
+      try {
+        const result = await bridge.startVideoExport(queued);
+        if (jobIdRef.current !== jobId) return;
+        if (result.status === 'cancelled') {
+          setPhaseTracked('cancelled');
+          setQueueLabel(null);
+          return;
+        }
+        if (result.status === 'error') {
+          setPhaseTracked('error');
+          setError(result.message ?? 'Export failed.');
+          setQueueLabel(null);
+          return;
+        }
+      } catch (err) {
+        if (jobIdRef.current !== jobId) return;
+        setPhaseTracked('error');
+        setError(unwrapIpcError(err));
+        setQueueLabel(null);
+        return;
+      }
+    }
+    setQueueLabel(null);
+    setPhaseTracked('done');
+    setPercent(100);
+    setNotice('Render queue finished.');
+  };
+
   const handleCancel = () => {
     if (phase === 'rendering' && jobIdRef.current) {
       void window.editpro?.cancelVideoExport(jobIdRef.current);
@@ -272,6 +408,22 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
 
   const busy = phase === 'rendering';
   const locked = platform !== 'custom';
+  const encoderPlan = selectVideoEncoder({
+    choice: encoder,
+    available: availableEncoders,
+    format,
+    codec,
+    platform: hostPlatform,
+  });
+  const gpuChoices = availableEncoders.filter((name) =>
+    (codec === 'hevc' ? name.startsWith('hevc_') : codec === 'h264' ? name.startsWith('h264_') : false));
+  const codecLabel = encoderPlan.codec === 'libx265' || encoderPlan.codec.startsWith('hevc_')
+    ? 'H.265'
+    : encoderPlan.codec === 'prores_ks'
+      ? 'ProRes'
+      : encoderPlan.codec === 'libvpx-vp9'
+        ? 'VP9'
+        : 'H.264';
 
   return (
     <div
@@ -343,7 +495,11 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
               className="form-select"
               value={format}
               disabled={busy || locked}
-              onChange={(event) => setFormat(event.target.value as VideoExportOptions['format'])}
+              onChange={(event) => {
+                const next = event.target.value as VideoExportOptions['format'];
+                setFormat(next);
+                setCodec(next === 'mov' ? 'prores' : next === 'webm' ? 'vp9' : 'h264');
+              }}
             >
               <option value="mp4">MP4 (H.264 + AAC)</option>
               <option value="webm">WebM (VP9 + Opus)</option>
@@ -382,6 +538,28 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
           </div>
 
           <div className="form-row">
+            <label className="form-label" htmlFor="export-encoder">Encoder</label>
+            <select
+              id="export-encoder"
+              className="form-select"
+              aria-label="Encoder"
+              value={encoder}
+              disabled={busy || format !== 'mp4'}
+              onChange={(event) => {
+                const next = event.target.value as EncoderChoice;
+                setEncoder(next);
+                if (creative && onCreativeChange) onCreativeChange({ ...creative, encoder: next }, 'encoder');
+              }}
+            >
+              <option value="auto">Auto (GPU when available)</option>
+              <option value="software">Software</option>
+              {gpuChoices.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-row">
             <label className="form-label" htmlFor="export-quality">Quality: {quality}%</label>
             <input
               id="export-quality"
@@ -401,7 +579,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
               <p>
                 <strong>{preview.plan.width}×{preview.plan.height}</strong>
                 {' · '}
-                {preview.plan.videoCodec === 'libx264' ? 'H.264' : preview.plan.videoCodec === 'prores_ks' ? 'ProRes' : 'VP9'}
+                {codecLabel}{encoderPlan.hardware ? ' GPU' : ''}
                 {' · '}
                 {formatTime(preview.plan.outputDurationSec)}
                 {preview.plan.audioCodec ? '' : ' · no audio'}
@@ -426,7 +604,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
                 <div className="export-progress-fill" style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
               </div>
               <p className="export-progress-label">
-                Encoding {Math.round(percent)}%
+                {queueLabel ?? `Encoding ${Math.round(percent)}%`}
                 {timeSec > 0 ? ` · ${formatTime(timeSec)}` : ''}
               </p>
             </div>
@@ -460,6 +638,21 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
             >
               Show in folder
             </button>
+          )}
+          {creative && onCreativeChange && phase !== 'done' && (
+            <>
+              <button className="btn-secondary" type="button" onClick={addToQueue} disabled={busy || !!preview.error}>
+                Add to queue
+              </button>
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={() => { void renderQueued(); }}
+                disabled={busy || !!preview.error || creative.renderQueue.length === 0}
+              >
+                Render queue ({creative.renderQueue.length})
+              </button>
+            </>
           )}
           {phase !== 'done' && (
             <button

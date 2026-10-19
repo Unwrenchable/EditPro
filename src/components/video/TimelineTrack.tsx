@@ -1,6 +1,8 @@
 import React, { useCallback } from 'react';
 import TimelineClipComponent from './TimelineClip';
 import type { TimelineClip, TimelineTool, TimelineTrack as TimelineTrackType } from '../../types';
+import WaveformView from './WaveformView';
+import { slicePeaks, type ClipTransitionKind } from '../../utils/video/creative';
 
 const TRACK_H_VIDEO = 34;
 const TRACK_H_AUDIO = 30;
@@ -32,6 +34,9 @@ interface TimelineTrackProps {
   onToggleMute: (trackId: string, muted: boolean) => void;
   onToggleLock: (trackId: string, locked: boolean) => void;
   onRemoveTrack: (trackId: string) => void;
+  peaks?: readonly number[];
+  mediaDuration?: number;
+  onDropTransition?: (outgoingClipId: string, incomingClipId: string, kind: ClipTransitionKind) => void;
 }
 
 const HEADER_W = 100;
@@ -67,8 +72,12 @@ const TimelineTrackComponent: React.FC<TimelineTrackProps> = ({
   onToggleMute,
   onToggleLock,
   onRemoveTrack,
+  peaks = [],
+  mediaDuration = 0,
+  onDropTransition,
 }) => {
   const trackHeight = track.type === 'video' ? TRACK_H_VIDEO : TRACK_H_AUDIO;
+  const orderedClips = [...clips].sort((a, b) => a.startTime - b.startTime);
 
   const handleMute = useCallback(
     (e: React.MouseEvent) => {
@@ -144,32 +153,63 @@ const TimelineTrackComponent: React.FC<TimelineTrackProps> = ({
         className={`tl-track${track.type === 'video' ? ' tl-track-video' : ' tl-track-audio'}`}
         style={{ height: trackHeight, width: trackWidth, position: 'relative', flex: 1 }}
       >
-        {clips.map((clip) => (
-          <TimelineClipComponent
-            key={clip.id}
-            clip={clip}
-            pixelsPerSecond={pixelsPerSecond}
-            trackHeight={trackHeight}
-            isSelected={selectedClipId === clip.id}
-            linked={Boolean(clip.linkId)}
-            tool={tool}
-            snapping={snapping}
-            snapPoints={snapPointsFor(clip.id)}
-            selectedKeyframeId={selectedKeyframeId}
-            onSelect={onSelectClip}
-            onDoubleClick={onDeleteClip}
-            onRippleDelete={onRippleDelete}
-            onRazor={onRazor}
-            onMove={onMove}
-            onTrim={onTrim}
-            onRippleTrim={onRippleTrim}
-            onRoll={onRoll}
-            onSlip={onSlip}
-            onSlide={onSlide}
-            onSelectKeyframe={onSelectKeyframe}
-            onMoveKeyframe={onMoveKeyframe}
-          />
-        ))}
+        {track.type === 'audio' && orderedClips.length === 0 && peaks.length > 0 && (
+          <div className="tl-program-wave" style={{ left: 0, width: trackWidth, height: trackHeight - 4 }}>
+            <WaveformView peaks={peaks} width={Math.max(2, trackWidth)} height={trackHeight - 8} />
+          </div>
+        )}
+        {orderedClips.map((clip, index) => {
+          const next = orderedClips[index + 1];
+          const clipPeaks = track.type === 'audio'
+            ? slicePeaks(peaks, mediaDuration, clip.inPoint, clip.outPoint)
+            : [];
+          return (
+            <React.Fragment key={clip.id}>
+              <TimelineClipComponent
+                clip={clip}
+                pixelsPerSecond={pixelsPerSecond}
+                trackHeight={trackHeight}
+                isSelected={selectedClipId === clip.id}
+                linked={Boolean(clip.linkId)}
+                tool={tool}
+                snapping={snapping}
+                snapPoints={snapPointsFor(clip.id)}
+                selectedKeyframeId={selectedKeyframeId}
+                peaks={clipPeaks}
+                onSelect={onSelectClip}
+                onDoubleClick={onDeleteClip}
+                onRippleDelete={onRippleDelete}
+                onRazor={onRazor}
+                onMove={onMove}
+                onTrim={onTrim}
+                onRippleTrim={onRippleTrim}
+                onRoll={onRoll}
+                onSlip={onSlip}
+                onSlide={onSlide}
+                onSelectKeyframe={onSelectKeyframe}
+                onMoveKeyframe={onMoveKeyframe}
+              />
+              {next && onDropTransition && (
+                <div
+                  className="tl-cut-drop"
+                  style={{ left: clip.endTime * pixelsPerSecond - 6 }}
+                  aria-label={`Drop transition between ${clip.id} and ${next.id}`}
+                  onDragOver={(event) => {
+                    if (event.dataTransfer.types.includes('application/x-editpro-transition')) {
+                      event.preventDefault();
+                    }
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const kind = event.dataTransfer.getData('application/x-editpro-transition') as ClipTransitionKind;
+                    if (kind) onDropTransition(clip.id, next.id, kind);
+                  }}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
     </div>
   );

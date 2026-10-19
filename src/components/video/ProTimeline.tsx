@@ -1,6 +1,7 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { formatTime } from '../../utils/videoUtils';
 import type { ClipKeyframe, EaseCurve, KeyframeProperty, TimelineMarker, TimelineTool, TimelineTrack, TimelineClip, TrackType } from '../../types';
+import type { ClipTransitionKind } from '../../utils/video/creative';
 import TimelineTrackComponent, { TRACK_HEADER_W, TRACK_H_VIDEO, TRACK_H_AUDIO } from './TimelineTrack';
 import TimelineRuler from './TimelineRuler';
 import KeyframeInspector from './KeyframeInspector';
@@ -63,6 +64,9 @@ interface ProTimelineProps {
   onAddKeyframe: (clipId: string | null, keyframe: ClipKeyframe) => void;
   onUpdateKeyframe: (clipId: string | null, keyframeId: string, patch: Partial<Pick<ClipKeyframe, 'time' | 'value' | 'easing'>>, coalesceKey?: string) => void;
   onRemoveKeyframe: (clipId: string | null, keyframeId: string) => void;
+  peaks?: readonly number[];
+  mediaDuration?: number;
+  onDropTransition?: (outgoingClipId: string, incomingClipId: string, kind: ClipTransitionKind) => void;
 }
 
 const ProTimeline: React.FC<ProTimelineProps> = ({
@@ -72,6 +76,7 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
   onAddTrack, onSetTrackMuted, onSetTrackLocked, onRemoveTrack, onDeleteClip, onRippleDelete, onSplitClip,
   onRazorAt, onMoveClip, onTrimClip, onRippleTrim, onRollClip, onSlipClip, onSlideClip, onToggleLink,
   onAddKeyframe, onUpdateKeyframe, onRemoveKeyframe,
+  peaks = [], mediaDuration = 0, onDropTransition,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -333,6 +338,9 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
               onToggleMute={onSetTrackMuted}
               onToggleLock={onSetTrackLocked}
               onRemoveTrack={onRemoveTrack}
+              peaks={track.type === 'audio' ? peaks : []}
+              mediaDuration={mediaDuration}
+              onDropTransition={onDropTransition}
             />
           ))}
 

@@ -3,8 +3,10 @@ import LumetriColorPanel from './LumetriColorPanel';
 import EssentialSoundPanel from './EssentialSoundPanel';
 import type {
   LumetriColor, LumetriCurves, AudioTrackSettings, AudioCategory,
-  AutoReframeAspect, VideoExportOptions, VideoTransition,
+  AutoReframeAspect, VideoExportOptions, VideoTransition, TimelineClip, TimelineTrack,
 } from '../../types';
+import type { CreativeState } from '../../utils/video/creative';
+import CreativePanels from './CreativePanels';
 import { PLATFORM_PRESETS, TRANSITION_OPTIONS } from '../../utils/video/exportPlan';
 
 type MainPanel = 'lumetri' | 'sound' | 'effects' | 'ai' | 'export';
@@ -41,6 +43,13 @@ interface VideoAdjustmentPanelProps {
   onDetectScenes: () => void;
   transition: VideoTransition;
   onTransitionChange: (transition: VideoTransition) => void;
+  creative: CreativeState;
+  tracks: TimelineTrack[];
+  clips: TimelineClip[];
+  currentTime: number;
+  duration: number;
+  onCreativeChange: (creative: CreativeState, coalesceKey?: string) => void;
+  onSetTrackMuted: (trackId: string, muted: boolean) => void;
 }
 
 const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
@@ -48,6 +57,7 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
   onLumetriBasicChange, onCurvesChange, onColorWheelChange, onAudioChange,
   onSetAutoReframe, onResetLumetri, onOpenVideo, onExport, onDetectScenes,
   transition, onTransitionChange,
+  creative, tracks, clips, currentTime, duration, onCreativeChange, onSetTrackMuted,
 }) => {
   const disabled = !videoUrl;
   const [activePanel, setActivePanel] = useState<MainPanel>('lumetri');
@@ -74,6 +84,7 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
 
       {/* ── Lumetri Color ── */}
       {activePanel === 'lumetri' && (
+        <>
         <LumetriColorPanel
           lumetri={lumetri}
           disabled={disabled}
@@ -82,15 +93,46 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
           onColorWheelChange={onColorWheelChange}
           onReset={onResetLumetri}
         />
+        <CreativePanels
+          part="grade"
+          creative={creative}
+          disabled={disabled}
+          tracks={tracks}
+          clips={clips}
+          currentTime={currentTime}
+          duration={duration}
+          videoUrl={videoUrl}
+          transition={transition}
+          onTransitionChange={onTransitionChange}
+          onCreativeChange={onCreativeChange}
+          onSetTrackMuted={onSetTrackMuted}
+        />
+        </>
       )}
 
       {/* ── Essential Sound ── */}
       {activePanel === 'sound' && (
+        <>
         <EssentialSoundPanel
           audio={audio}
           disabled={disabled}
           onChange={onAudioChange}
         />
+        <CreativePanels
+          part="audio"
+          creative={creative}
+          disabled={disabled}
+          tracks={tracks}
+          clips={clips}
+          currentTime={currentTime}
+          duration={duration}
+          videoUrl={videoUrl}
+          transition={transition}
+          onTransitionChange={onTransitionChange}
+          onCreativeChange={onCreativeChange}
+          onSetTrackMuted={onSetTrackMuted}
+        />
+        </>
       )}
 
       {/* ── Effects ── */}
@@ -109,6 +151,20 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
               </button>
             ))}
           </div>
+          <CreativePanels
+            part="picture"
+            creative={creative}
+            disabled={disabled}
+            tracks={tracks}
+            clips={clips}
+            currentTime={currentTime}
+            duration={duration}
+            videoUrl={videoUrl}
+            transition={transition}
+            onTransitionChange={onTransitionChange}
+            onCreativeChange={onCreativeChange}
+            onSetTrackMuted={onSetTrackMuted}
+          />
           {transition !== 'cut' && (
             <div className="info-box" style={{ marginTop: 10 }}>
               <strong>{TRANSITION_OPTIONS.find((t) => t.id === transition)?.label}</strong> is rendered at the In and Out points when you export.

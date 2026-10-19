@@ -2,6 +2,7 @@ import type { ClipKeyframe } from '../../types';
 import { fileUrlToPath, isFilesystemPath, type ExportSourceClip } from './exportPlan';
 
 interface ClipLike {
+  id?: string;
   src: string;
   trackId: string;
   startTime: number;
@@ -41,6 +42,10 @@ export function timelineClipsForExport(
       inPoint: clip.inPoint,
       outPoint: clip.outPoint,
     };
+    if (clip.id) {
+      exportedClip.clipId = clip.id;
+      exportedClip.trackId = clip.trackId;
+    }
     if (clip.keyframes && clip.keyframes.length > 0) {
       exportedClip.keyframes = clip.keyframes.map((keyframe) => ({
         time: keyframe.time,

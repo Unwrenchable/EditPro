@@ -23,7 +23,7 @@ import {
 } from './security.js';
 import type { NavigationOptions } from './security.js';
 import { parseExportJob, ExportPlanError, type ExportJob } from './export/plan.js';
-import { cancelAllExports, cancelExportJob, hasActiveExport, runFfmpegExport } from './export/runner.js';
+import { cancelAllExports, cancelExportJob, hasActiveExport, probeEncoders, runFfmpegExport } from './export/runner.js';
 import { ensureFfmpegExecutable, locateFfmpegBinary } from './export/ffmpegLocate.js';
 import { createDesktopSupport, type DesktopSupport } from './updates/controller.js';
 
@@ -460,6 +460,29 @@ ipcMain.handle('export:materializeSource', async (event, fileName: unknown, byte
   await fs.writeFile(dest, view);
   fileGrants.grantRead(dest, { ephemeral: true });
   return dest;
+});
+
+let encoderList: Promise<string[]> | null = null;
+
+/** Hardware and software encoders this ffmpeg build can use. */
+ipcMain.handle('export:encoders', async (event) => {
+  assertTrustedIpcSender(event);
+  if (!encoderList) {
+    encoderList = (async () => {
+      try {
+        const ffmpegPath = locateFfmpegBinary({
+          packaged: app.isPackaged,
+          platform: process.platform,
+          resourcesPath: process.resourcesPath,
+        });
+        await ensureFfmpegExecutable(ffmpegPath, process.platform);
+        return await probeEncoders(ffmpegPath);
+      } catch {
+        return [];
+      }
+    })();
+  }
+  return encoderList;
 });
 
 /** Encode the edit with the bundled ffmpeg binary. Progress arrives on `export:event`. */

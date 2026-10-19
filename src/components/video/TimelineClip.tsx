@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import { formatTime } from '../../utils/videoUtils';
 import type { TimelineClip as TimelineClipType, TimelineTool } from '../../types';
 import { snapSpan, snapTime } from '../../utils/video/timelineEdit';
+import WaveformView from './WaveformView';
 
 interface TimelineClipProps {
   clip: TimelineClipType;
@@ -13,6 +14,7 @@ interface TimelineClipProps {
   snapping: boolean;
   snapPoints: readonly number[];
   selectedKeyframeId: string | null;
+  peaks?: readonly number[];
   onSelect: (clipId: string) => void;
   onDoubleClick: (clipId: string) => void;
   onRippleDelete: (clipId: string) => void;
@@ -41,6 +43,7 @@ const TimelineClipComponent: React.FC<TimelineClipProps> = ({
   snapping,
   snapPoints,
   selectedKeyframeId,
+  peaks,
   onSelect,
   onDoubleClick,
   onRippleDelete,
@@ -156,6 +159,9 @@ const TimelineClipComponent: React.FC<TimelineClipProps> = ({
         }
       }}
     >
+      {peaks && peaks.length > 0 && (
+        <WaveformView peaks={peaks} width={width} height={Math.max(8, trackHeight - 8)} />
+      )}
       <span className={`tl-clip-edge tl-clip-edge-in`} onMouseDown={handleEdgeMouseDown('in')} />
       <span className="tl-clip-label">
         {linked ? '⚭ ' : ''}

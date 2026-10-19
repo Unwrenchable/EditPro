@@ -1,3 +1,5 @@
+import type { CreativeState } from '../utils/video/creative';
+
 export type EditorMode = 'photo' | 'video' | 'magic';
 
 // ── Magic Movie ──────────────────────────────────────────────────────────────
@@ -185,7 +187,7 @@ export type VideoTransition =
   | 'dip-to-black';
 
 export interface VideoExportOptions {
-  platform: 'youtube' | 'tiktok' | 'vimeo' | 'twitter' | 'custom';
+  platform: 'youtube' | 'youtube-4k' | 'tiktok' | 'instagram' | 'vimeo' | 'twitter' | 'prores' | 'h265' | 'custom';
   resolution: '4K' | '1080p' | '720p' | '480p';
   frameRate: 24 | 30 | 60;
   format: 'mp4' | 'webm' | 'mov';
@@ -297,6 +299,8 @@ export interface VideoEditorState {
   shuttleRate: number;
   /** Transition rendered on export at the In/Out points. */
   transition: VideoTransition;
+  /** Titles, mixer, grade, LUT, loudness, and the render queue. */
+  creative: CreativeState;
   /** Absolute path when the file was opened from disk in Electron. */
   sourcePath: string | null;
 }

@@ -15,6 +15,7 @@ import type {
   VideoTransition,
 } from '../types';
 import { DEFAULT_ADJUSTMENTS } from './imageFilters';
+import { createDefaultCreativeState, normalizeCreativeState, type CreativeState } from './video/creative';
 import { DEFAULT_AUDIO, DEFAULT_LUMETRI } from './videoUtils';
 
 const PHOTO_FILTERS: readonly PhotoFilterName[] = [
@@ -83,6 +84,7 @@ export interface VideoEditSnapshot {
   /** Animation of the program picture, in absolute sequence seconds. */
   programKeyframes: ClipKeyframe[];
   transition: VideoTransition;
+  creative: CreativeState;
 }
 
 export interface MediaBinding {
@@ -127,6 +129,7 @@ export function createDefaultVideoEdits(): VideoEditSnapshot {
     snapping: true,
     programKeyframes: [],
     transition: 'cut',
+    creative: createDefaultCreativeState(),
   };
 }
 
@@ -296,6 +299,7 @@ export function normalizeVideoEdits(input: unknown): VideoEditSnapshot {
     snapping: bool(record.snapping, true),
     programKeyframes: normalizeKeyframes(record.programKeyframes),
     transition: oneOf(record.transition, TRANSITIONS, 'cut'),
+    creative: normalizeCreativeState(record.creative),
   };
 }
 
