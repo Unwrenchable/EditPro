@@ -6,6 +6,7 @@ import { createTimelineId } from '../../../utils/video/timelineEdit';
 import CaptionsPanel from './CaptionsPanel';
 import FillerPanel from './FillerPanel';
 import ScenesPanel from './ScenesPanel';
+import SilencePanel from './SilencePanel';
 import TranscriptPanel from './TranscriptPanel';
 import { useAiTask } from './useAiTask';
 
@@ -15,6 +16,7 @@ export default function OfflineAiPanel() {
   const { busy, progress, error, setError, run, cancel } = useAiTask();
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [words, setWords] = useState<TranscriptWord[]>([]);
+  const [silence, setSilence] = useState<AiTimeRange[]>([]);
   const desktop = Boolean(window.editpro?.aiTranscribe);
 
   const refresh = useCallback(async () => {
@@ -48,6 +50,7 @@ export default function OfflineAiPanel() {
       () => createTimelineId('clip'),
     ));
     setWords((current) => nextWords ?? shiftWords(current, ranges));
+    setSilence([]);
   }, [setError, sourcePath, video]);
 
   const markScenes = useCallback((hits: AiSceneHit[]) => {
@@ -83,6 +86,14 @@ export default function OfflineAiPanel() {
         </div>
       )}
       <ScenesPanel sourcePath={sourcePath} busy={busy} onMark={markScenes} run={run} />
+      <SilencePanel
+        sourcePath={sourcePath}
+        busy={busy}
+        ranges={silence}
+        onRanges={setSilence}
+        onRipple={ripple}
+        run={run}
+      />
       <CaptionsPanel
         sourcePath={sourcePath}
         busy={busy}

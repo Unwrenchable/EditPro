@@ -235,6 +235,9 @@ contextBridge.exposeInMainWorld('editpro', {
 
   aiCancel: (jobId: string) => ipcRenderer.invoke('ai:cancel', jobId),
 
+  aiDetectSilence: (request: { sourcePath: string; noiseDb: number; minDuration: number; padding: number }) =>
+    ipcRenderer.invoke('ai:detectSilence', request),
+
   aiDetectScenes: (request: { sourcePath: string; threshold: number }) =>
     ipcRenderer.invoke('ai:detectScenes', request),
 

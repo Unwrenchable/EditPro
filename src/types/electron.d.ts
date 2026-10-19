@@ -204,6 +204,12 @@ export interface EditProBridge {
   aiStatus(): Promise<AiStatus>;
   aiDownload(request: { kind: 'model' | 'cli'; modelId?: string }): Promise<{ ready: boolean }>;
   aiCancel(jobId: string): Promise<boolean>;
+  aiDetectSilence(request: {
+    sourcePath: string;
+    noiseDb: number;
+    minDuration: number;
+    padding: number;
+  }): Promise<{ duration: number; ranges: AiTimeRange[] }>;
   aiDetectScenes(request: { sourcePath: string; threshold: number }): Promise<{ hits: AiSceneHit[] }>;
   aiTranscribe(request: { sourcePath: string; modelId: string; language?: string }): Promise<{ cues: AiCaptionCue[] }>;
   aiSaveCaptions(request: { cues: AiCaptionCue[]; format: 'srt' | 'vtt' }): Promise<{ outputPath: string | null }>;

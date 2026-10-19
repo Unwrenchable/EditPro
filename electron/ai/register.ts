@@ -15,10 +15,12 @@ import {
   parseCutRequest,
   parseDownloadRequest,
   parseSceneRequest,
+  parseSilenceRequest,
   parseSourcePath,
   parseTranscribeRequest,
 } from './payload.js';
 import { detectScenes } from './scenes/run.js';
+import { detectSilence } from './silence/run.js';
 
 export { cancelAllAiJobs };
 
@@ -50,6 +52,25 @@ export function registerOfflineAi(host: AiHost): void {
     host.assertTrusted(event);
     if (typeof jobId !== 'string' || jobId.length === 0) return false;
     return cancelAiJob(jobId);
+  });
+
+  ipcMain.handle('ai:detectSilence', async (event, payload: unknown) => {
+    host.assertTrusted(event);
+    const request = parseSilenceRequest(payload);
+    const sourcePath = await host.assertReadable(request.sourcePath);
+    return withAiJob(host, event, async ({ signal, progress }) => {
+      progress(15, 'Listening for silence');
+      const found = await detectSilence({
+        ffmpegPath: await host.ffmpegPath(),
+        sourcePath,
+        noiseDb: request.noiseDb,
+        minDuration: request.minDuration,
+        padding: request.padding,
+        signal,
+      });
+      progress(100, found.ranges.length === 0 ? 'No silence found' : `Found ${found.ranges.length} silent stretches`);
+      return found;
+    });
   });
 
   ipcMain.handle('ai:detectScenes', async (event, payload: unknown) => {
