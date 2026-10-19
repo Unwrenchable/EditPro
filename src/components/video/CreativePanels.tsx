@@ -4,6 +4,7 @@ import {
   TITLE_FONTS,
   TRANSITION_LIBRARY,
   createTitleFromPreset,
+  type HdrTransfer,
   measureLoudness,
   normalizeLinearGain,
   parseCube,
@@ -13,6 +14,8 @@ import {
   type CreativeState,
   type TitleClip,
 } from '../../utils/video/creative';
+import ColorWheel from './ColorWheel';
+import CurveEditor from './CurveEditor';
 
 interface CreativePanelsProps {
   creative: CreativeState;
@@ -456,6 +459,27 @@ const CreativePanels: React.FC<CreativePanelsProps> = ({
       {part === 'grade' && (
       <>
       <p className="section-subtitle">Lift / Gamma / Gain</p>
+      <div className="color-wheel-row">
+        {([
+          { id: 'lift', neutral: 0, min: -1, max: 1 },
+          { id: 'gamma', neutral: 1, min: 0.2, max: 3 },
+          { id: 'gain', neutral: 1, min: 0, max: 4 },
+        ] as const).map((wheel) => (
+          <ColorWheel
+            key={wheel.id}
+            label={wheel.id}
+            rgb={creative.liftGammaGain[wheel.id]}
+            neutral={wheel.neutral}
+            min={wheel.min}
+            max={wheel.max}
+            disabled={disabled}
+            onChange={(rgb) => patch({
+              ...creative,
+              liftGammaGain: { ...creative.liftGammaGain, [wheel.id]: rgb },
+            }, `lgg-wheel:${wheel.id}`)}
+          />
+        ))}
+      </div>
       {(['lift', 'gamma', 'gain'] as const).map((wheel) => (
         <fieldset key={wheel} className="lgg-wheel">
           <legend>{wheel}</legend>
@@ -491,10 +515,52 @@ const CreativePanels: React.FC<CreativePanelsProps> = ({
           ...creative,
           liftGammaGain: { lift: { r: 0, g: 0, b: 0 }, gamma: { r: 1, g: 1, b: 1 }, gain: { r: 1, g: 1, b: 1 } },
           lut: null,
+          lutStrength: 1,
         })}
       >
         Reset wheels and LUT
       </button>
+
+      <p className="section-subtitle">RGB / Luma curves</p>
+      <CurveEditor
+        curves={creative.curves}
+        disabled={disabled}
+        onChange={(curves, key) => patch({ ...creative, curves }, key)}
+      />
+
+      <p className="section-subtitle">HDR</p>
+      <label className="tl-kf-ease">
+        Transfer
+        <select
+          aria-label="HDR transfer"
+          disabled={disabled}
+          value={creative.hdr.transfer}
+          onChange={(event) => patch({
+            ...creative,
+            hdr: { ...creative.hdr, transfer: event.target.value as HdrTransfer },
+          })}
+        >
+          <option value="sdr">SDR</option>
+          <option value="pq">PQ (HDR10)</option>
+          <option value="hlg">HLG</option>
+        </select>
+      </label>
+      <label className="toggle-row">
+        <span className="slider-label">Tone-map preview</span>
+        <input
+          type="checkbox"
+          aria-label="Tone-map preview"
+          disabled={disabled || creative.hdr.transfer === 'sdr'}
+          checked={creative.hdr.toneMapPreview}
+          onChange={(event) => patch({
+            ...creative,
+            hdr: { ...creative.hdr, toneMapPreview: event.target.checked },
+          })}
+        />
+      </label>
+      <p className="panel-hint" style={{ textAlign: 'left' }}>
+        PQ and HLG write BT.2020 transfer metadata on export. Tone-map preview only changes the monitor.
+      </p>
 
       <p className="section-subtitle">Cube LUT</p>
       <input
@@ -513,9 +579,25 @@ const CreativePanels: React.FC<CreativePanelsProps> = ({
         Import .cube
       </button>
       {creative.lut && (
-        <p className="panel-hint" style={{ textAlign: 'left' }}>
-          {creative.lut.title} · {creative.lut.size}³
-        </p>
+        <>
+          <p className="panel-hint" style={{ textAlign: 'left' }}>
+            {creative.lut.title} · {creative.lut.size}³
+          </p>
+          <label className="slider-row">
+            <span className="slider-label">LUT strength</span>
+            <input
+              className="slider"
+              type="range"
+              aria-label="LUT strength"
+              min={0}
+              max={1}
+              step={0.01}
+              disabled={disabled}
+              value={creative.lutStrength}
+              onChange={(event) => patch({ ...creative, lutStrength: Number(event.target.value) }, 'lut-strength')}
+            />
+          </label>
+        </>
       )}
       </>
       )}

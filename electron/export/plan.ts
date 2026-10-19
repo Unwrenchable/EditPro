@@ -12,11 +12,14 @@ import {
   clipEnvelope,
   drawtextFilters,
   hasGainCurve,
+  curvesFilter,
+  hdrMetadataArgs,
   liftGammaGainFilter,
   lut3dFilter,
   normalizeCreativeState,
-  normalizeLinearGain,
+  automationFilter,
   selectVideoEncoder,
+  trackInsertFilters,
   softwareCodecName,
   trackFader,
   volumeFilter,
@@ -26,6 +29,7 @@ import {
   type DeliveryCodec,
   type EncoderChoice,
 } from './creative.js';
+import { DEFAULT_BEZIER, normalizeBezierHandles } from './easing.js';
 import { motionGraph, prepareKeyframes, type ExportKeyframe } from './motion.js';
 
 export { keyframeExpression, motionGraph, prepareKeyframes } from './motion.js';
@@ -657,7 +661,7 @@ function parseAudio(value: unknown): ExportAudio {
   };
 }
 
-const EASES = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'hold'] as const;
+const EASES = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'hold', 'bezier'] as const;
 const KEYFRAME_PROPERTIES = ['positionX', 'positionY', 'scale', 'rotation', 'opacity', 'effect'] as const;
 
 function parseKeyframe(value: unknown, label: string): ExportKeyframe {
@@ -675,6 +679,17 @@ function parseKeyframe(value: unknown, label: string): ExportKeyframe {
       throw new ExportPlanError(`${label} needs an effect parameter name.`);
     }
     keyframe.effectParam = param;
+  }
+  if (source.bezier !== undefined) {
+    const record = readRecord(source.bezier, `${label} bezier`);
+    keyframe.bezier = normalizeBezierHandles({
+      x1: readNumber(record, 'x1', `${label} bezier x1`, 0, 1),
+      y1: readNumber(record, 'y1', `${label} bezier y1`, -0.5, 1.5),
+      x2: readNumber(record, 'x2', `${label} bezier x2`, 0, 1),
+      y2: readNumber(record, 'y2', `${label} bezier y2`, -0.5, 1.5),
+    });
+  } else if (keyframe.easing === 'bezier') {
+    keyframe.bezier = { ...DEFAULT_BEZIER };
   }
   return keyframe;
 }
@@ -850,7 +865,12 @@ export function lumetriFilters(lut: ExportLumetri): string[] {
 }
 
 /** Essential Sound → ffmpeg audio filters. Loudness is applied once at the end. */
-export function audioProcessFilters(audio: ExportAudio, volume: number, rate: number): string[] {
+export function audioProcessFilters(
+  audio: ExportAudio,
+  volume: number,
+  rate: number,
+  options?: { skipLoudnorm?: boolean },
+): string[] {
   const filters: string[] = [];
   const tempo = atempoChain(rate);
   if (tempo) filters.push(tempo);
@@ -874,7 +894,7 @@ export function audioProcessFilters(audio: ExportAudio, volume: number, rate: nu
     audio.category === 'dialogue' || audio.category === 'music'
       ? audio.loudness !== 0 || audio.noiseReduction > 0 || audio.clarity > 0 || audio.deReverb > 0 || audio.lowCut || audio.autoDuck
       : false;
-  if (wantsLoudnorm) {
+  if (wantsLoudnorm && !options?.skipLoudnorm) {
     const base = audio.category === 'music' ? -14 : -16;
     const target = clamp(base + audio.loudness, -31, -5);
     filters.push(`loudnorm=I=${target.toFixed(1)}:TP=-1.5:LRA=11`);
@@ -987,7 +1007,11 @@ function videoBody(
   if (job.creative) {
     const grade = liftGammaGainFilter(job.creative.liftGammaGain);
     if (grade) creativeFilters.push(grade);
-    if (job.creative.lut && extras.lutCubePath) creativeFilters.push(lut3dFilter(extras.lutCubePath));
+    const curves = curvesFilter(job.creative.curves);
+    if (curves) creativeFilters.push(curves);
+    if (job.creative.lut && job.creative.lutStrength > 0.001 && extras.lutCubePath) {
+      creativeFilters.push(lut3dFilter(extras.lutCubePath));
+    }
     for (const title of job.creative.titles) {
       creativeFilters.push(...drawtextFilters(title, size, job.trimStart, rate, extras.fontFile ?? null));
     }
@@ -1022,19 +1046,32 @@ function audioBody(
   const trackId = clipId
     ? (job.clips.find((clip) => clip.clipId === clipId)?.trackId ?? 'a1')
     : 'a1';
+  const mixEntry = job.creative.trackMix.find((item) => item.trackId === trackId);
   const fader = trackFader(mixTracks(job), job.creative.trackMix, trackId);
-  const mix = clamp(job.volume * fader * normalizeLinearGain(job.creative.loudness), 0, 4);
+  const normalize = job.creative.loudness.normalizeOnExport;
+  // loudnorm owns the LUFS target. The measured makeup stays on the monitor.
+  const mix = clamp(job.volume * fader, 0, 4);
   const curve = hasGainCurve(envelope) ? volumeFilter(envelope, duration, mix) : null;
   const constant = curve ? 1 : clamp(mix * envelope.volume, 0, 4);
-  const process = audioProcessFilters(job.audio, constant, rate);
-  return ['asetpts=PTS-STARTPTS', ...process, curve, ...motionAudio].filter((part): part is string => Boolean(part)).join(',');
+  const process = audioProcessFilters(job.audio, constant, rate, { skipLoudnorm: normalize });
+  const inserts = trackInsertFilters(mixEntry);
+  const automation = automationFilter(mixEntry?.automation, duration);
+  const loudnorm = normalize
+    ? `loudnorm=I=${clamp(job.creative.loudness.targetLufs, -36, -5).toFixed(1)}:TP=-1.5:LRA=11`
+    : null;
+  return ['asetpts=PTS-STARTPTS', ...inserts, ...process, curve, automation, ...motionAudio, loudnorm]
+    .filter((part): part is string => Boolean(part))
+    .join(',');
 }
 
 function codecArgs(job: ExportJob, withAudio: boolean): string[] {
   const { format, quality } = job.options;
   const crf = qualityToCrf(quality);
   const selected = chosenEncoder(job);
-  const args = [...encoderArgs(selected.codec, crf, quality)];
+  const args = [
+    ...encoderArgs(selected.codec, crf, quality),
+    ...hdrMetadataArgs(job.creative?.hdr.transfer ?? 'sdr', selected.codec),
+  ];
   if (selected.codec === 'prores_ks') {
     const profileAt = args.indexOf('-profile:v');
     if (profileAt >= 0) args[profileAt + 1] = String(qualityToProresProfile(quality));
@@ -1371,7 +1408,7 @@ export function buildExportPlan(job: ExportJob, options: BuildOptions = {}): Exp
   videos.push(...videoClips);
 
   const warnings = collectWarnings(videos);
-  if (job.creative?.lut && !options.lutCubePath) {
+  if (job.creative?.lut && job.creative.lutStrength > 0.001 && !options.lutCubePath) {
     warnings.push('The imported LUT is written beside the encode and applied with lut3d.');
   }
   const anyAudio = primaryAudio || externalAudio.length > 0;

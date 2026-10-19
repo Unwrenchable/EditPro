@@ -1825,6 +1825,23 @@
   cursor: pointer;
 }
 .tl-kf-chip.active { border-color: #7c5cbf; color: #fff; }
+.tl-graph {
+  margin: 0 8px 6px;
+  padding: 6px;
+  background: #121218;
+  border: 1px solid #2a2a32;
+  border-radius: 4px;
+}
+.tl-graph-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.tl-graph-svg { width: 100%; height: 148px; display: block; touch-action: none; background: #0d0d12; }
+.tl-graph-bg { fill: #0d0d12; }
+.tl-graph-grid { stroke: #2c2c36; stroke-width: 1; }
+.tl-graph-curve { fill: none; stroke: #c9a6ff; stroke-width: 1.6; }
+.tl-graph-playhead { stroke: #e05555; stroke-width: 1; }
+.tl-graph-handle-line { stroke: #7ec8ff; stroke-width: 1; }
+.tl-graph-handle { fill: #7ec8ff; cursor: grab; }
+.tl-graph-key { fill: #e0c044; cursor: grab; }
+.tl-graph-key.active { fill: #fff; stroke: #7c5cbf; stroke-width: 1.5; }
 
 /* ── Timeline Ruler playhead marker ──────────────────────────────────────── */
 .tl-ruler-playhead {
@@ -2685,6 +2702,21 @@
   font-size: 11px;
 }
 
+.audio-mixer { margin-bottom: 12px; }
+.mixer-track { border: 1px solid #2a2a2a; border-radius: 6px; padding: 8px; margin: 8px 0; }
+.mixer-meter { height: 8px; background: #141414; border-radius: 4px; overflow: hidden; margin: 6px 0; }
+.mixer-meter-fill { height: 100%; background: linear-gradient(90deg, #3dba6a, #e0c044 72%, #e05555); }
+.loudness-targets { display: flex; flex-wrap: wrap; gap: 4px; }
+.color-wheel-row { display: flex; gap: 8px; justify-content: space-between; margin-bottom: 8px; }
+.color-wheel { flex: 1; min-width: 0; }
+.color-wheel-pad { width: 100%; height: 116px; display: block; touch-action: none; cursor: crosshair; }
+.curve-editor { margin: 6px 0 10px; }
+.curve-editor-svg { width: 100%; height: 140px; display: block; background: #0d0d12; }
+.curve-editor-line { fill: none; stroke: #ddd; stroke-width: 1.6; }
+.curve-red { stroke: #e05050; }
+.curve-green { stroke: #50c878; }
+.curve-blue { stroke: #5080e0; }
+.curve-luma { stroke: #e6e6e6; }
 .lgg-wheel {
   border: 1px solid #2c2c2c;
   border-radius: 8px;

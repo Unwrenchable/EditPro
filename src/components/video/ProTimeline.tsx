@@ -1,11 +1,14 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { formatTime } from '../../utils/videoUtils';
 import type { ClipKeyframe, EaseCurve, KeyframeProperty, TimelineMarker, TimelineTool, TimelineTrack, TimelineClip, TrackType } from '../../types';
+import type { BezierHandles } from '../../../electron/export/easing';
+import { DEFAULT_BEZIER } from '../../../electron/export/easing';
 import type { ClipTransitionKind } from '../../utils/video/creative';
 import TimelineTrackComponent, { TRACK_HEADER_W, TRACK_H_VIDEO, TRACK_H_AUDIO } from './TimelineTrack';
 import TimelineRuler from './TimelineRuler';
 import KeyframeInspector from './KeyframeInspector';
-import { defaultKeyframeValue } from '../../utils/video/keyframes';
+import GraphEditor from './GraphEditor';
+import { defaultKeyframeValue, type KeyframePatch } from '../../utils/video/keyframes';
 import { collectSnapPoints, createTimelineId, displayTrackOrder, linkedGroup } from '../../utils/video/timelineEdit';
 import { matchNleShortcut, nleActionKind } from '../../utils/video/nleShortcuts';
 
@@ -62,7 +65,7 @@ interface ProTimelineProps {
   onSlideClip: (clipId: string, newStart: number, coalesceKey?: string) => void;
   onToggleLink: (selectedId: string | null) => void;
   onAddKeyframe: (clipId: string | null, keyframe: ClipKeyframe) => void;
-  onUpdateKeyframe: (clipId: string | null, keyframeId: string, patch: Partial<Pick<ClipKeyframe, 'time' | 'value' | 'easing'>>, coalesceKey?: string) => void;
+  onUpdateKeyframe: (clipId: string | null, keyframeId: string, patch: KeyframePatch, coalesceKey?: string) => void;
   onRemoveKeyframe: (clipId: string | null, keyframeId: string) => void;
   peaks?: readonly number[];
   mediaDuration?: number;
@@ -87,6 +90,7 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
   const [property, setProperty] = useState<KeyframeProperty>('opacity');
   const [effectParam, setEffectParam] = useState('blur');
   const [easing, setEasing] = useState<EaseCurve>('linear');
+  const [armedBezier, setArmedBezier] = useState<BezierHandles>(DEFAULT_BEZIER);
 
   const orderedTracks = displayTrackOrder(tracks);
   const pps = PIXELS_PER_SECOND * zoom;
@@ -133,9 +137,10 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
       id: createTimelineId('kf'),
       time: localTime,
       property,
-      value: defaultKeyframeValue(property),
+      value: defaultKeyframeValue(property, property === 'effect' ? effectParam : undefined),
       easing,
     };
+    if (easing === 'bezier') keyframe.bezier = armedBezier;
     if (property === 'effect') {
       const param = effectParam.trim();
       if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/.test(param)) return;
@@ -143,7 +148,7 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
     }
     onAddKeyframe(selectedClip?.id ?? null, keyframe);
     setSelectedKeyframeId(keyframe.id);
-  }, [currentTime, easing, effectParam, onAddKeyframe, property, selectedClip]);
+  }, [armedBezier, currentTime, easing, effectParam, onAddKeyframe, property, selectedClip]);
 
   useEffect(() => {
     if (!hasVideo) return;
@@ -360,6 +365,26 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
         </div>
       </div>
 
+      <GraphEditor
+        keyframes={inspectorKeys}
+        property={property}
+        effectParam={property === 'effect' ? effectParam : undefined}
+        duration={selectedClip ? Math.max(0.05, selectedClip.endTime - selectedClip.startTime) : Math.max(duration, 0.05)}
+        playhead={selectedClip ? currentTime - selectedClip.startTime : currentTime}
+        selectedKeyframeId={selectedKeyframeId}
+        onSelect={setSelectedKeyframeId}
+        onChange={(keyframeId, patch, coalesceKey) => onUpdateKeyframe(selectedClip?.id ?? null, keyframeId, patch, coalesceKey)}
+        onPreset={(next, handles) => {
+          setEasing(next);
+          if (handles) setArmedBezier(handles);
+          if (!selectedKeyframeId) return;
+          onUpdateKeyframe(
+            selectedClip?.id ?? null,
+            selectedKeyframeId,
+            handles ? { easing: next, bezier: handles } : { easing: next, bezier: undefined },
+          );
+        }}
+      />
       <KeyframeInspector
         targetLabel={selectedClip ? `Clip ${selectedClip.src.split('/').pop()}` : 'Program'}
         keyframes={inspectorKeys}
@@ -369,11 +394,13 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
         selectedKeyframeId={selectedKeyframeId}
         onPropertyChange={setProperty}
         onEffectParamChange={setEffectParam}
-        onEasingChange={setEasing}
+        onEasingChange={(next) => {
+          setEasing(next);
+          if (next === 'bezier') setArmedBezier(DEFAULT_BEZIER);
+        }}
         onSelectKeyframe={setSelectedKeyframeId}
         onAdd={addKeyframe}
-        onChangeValue={(keyframeId, value, coalesce) => onUpdateKeyframe(selectedClip?.id ?? null, keyframeId, { value }, coalesce ? `kf-value:${keyframeId}` : undefined)}
-        onChangeEasing={(keyframeId, next) => onUpdateKeyframe(selectedClip?.id ?? null, keyframeId, { easing: next })}
+        onPatch={(keyframeId, patch, coalesceKey) => onUpdateKeyframe(selectedClip?.id ?? null, keyframeId, patch, coalesceKey)}
         onRemove={(keyframeId) => onRemoveKeyframe(selectedClip?.id ?? null, keyframeId)}
       />
 

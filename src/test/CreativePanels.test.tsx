@@ -79,4 +79,16 @@ describe('CreativePanels', () => {
     expect(next.liftGammaGain.lift.r).toBe(0.25);
     expect(next.liftGammaGain.gamma.g).toBe(1);
   });
+
+  it('edits a luma curve point and selects PQ', () => {
+    const onCreativeChange = renderPart('grade');
+    fireEvent.change(screen.getByRole('slider', { name: 'Curve point' }), { target: { value: '0.2' } });
+    const curved = onCreativeChange.mock.calls.at(-1)?.[0];
+    expect(curved.curves.luma.some((point: { y: number }) => point.y === 0.2)).toBe(true);
+    fireEvent.change(screen.getByRole('combobox', { name: 'HDR transfer' }), { target: { value: 'hlg' } });
+    const hdr = onCreativeChange.mock.calls.at(-1)?.[0];
+    expect(hdr.hdr).toEqual({ transfer: 'hlg', toneMapPreview: false });
+    expect(screen.getByRole('slider', { name: 'lift color wheel' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Red' })).toBeInTheDocument();
+  });
 });

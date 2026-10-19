@@ -7,6 +7,7 @@ import type {
 } from '../../types';
 import type { CreativeState } from '../../utils/video/creative';
 import CreativePanels from './CreativePanels';
+import AudioMixer from './AudioMixer';
 import { PLATFORM_PRESETS, TRANSITION_OPTIONS } from '../../utils/video/exportPlan';
 
 type MainPanel = 'lumetri' | 'sound' | 'effects' | 'ai' | 'export';
@@ -50,6 +51,11 @@ interface VideoAdjustmentPanelProps {
   duration: number;
   onCreativeChange: (creative: CreativeState, coalesceKey?: string) => void;
   onSetTrackMuted: (trackId: string, muted: boolean) => void;
+  peaks?: readonly number[];
+  mediaDuration?: number;
+  trimStart?: number;
+  playbackRate?: number;
+  videoRef?: React.RefObject<HTMLVideoElement | null>;
 }
 
 const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
@@ -58,6 +64,7 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
   onSetAutoReframe, onResetLumetri, onOpenVideo, onExport, onDetectScenes,
   transition, onTransitionChange,
   creative, tracks, clips, currentTime, duration, onCreativeChange, onSetTrackMuted,
+  peaks = [], mediaDuration = 0, trimStart = 0, playbackRate = 1, videoRef,
 }) => {
   const disabled = !videoUrl;
   const [activePanel, setActivePanel] = useState<MainPanel>('lumetri');
@@ -113,6 +120,19 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
       {/* ── Essential Sound ── */}
       {activePanel === 'sound' && (
         <>
+        <AudioMixer
+          creative={creative}
+          tracks={tracks}
+          currentTime={currentTime}
+          trimStart={trimStart}
+          playbackRate={playbackRate}
+          peaks={peaks}
+          mediaDuration={mediaDuration || duration}
+          disabled={disabled}
+          videoRef={videoRef}
+          onCreativeChange={onCreativeChange}
+          onSetTrackMuted={onSetTrackMuted}
+        />
         <EssentialSoundPanel
           audio={audio}
           disabled={disabled}

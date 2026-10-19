@@ -14,6 +14,7 @@ import type {
   TimelineTrack,
   VideoTransition,
 } from '../types';
+import { DEFAULT_BEZIER, normalizeBezierHandles, type BezierHandles } from '../../electron/export/easing';
 import { DEFAULT_ADJUSTMENTS } from './imageFilters';
 import { createDefaultCreativeState, normalizeCreativeState, type CreativeState } from './video/creative';
 import { DEFAULT_AUDIO, DEFAULT_LUMETRI } from './videoUtils';
@@ -43,7 +44,7 @@ const TRANSITIONS: readonly VideoTransition[] = [
 ];
 const AUDIO_CATEGORIES: readonly AudioCategory[] = ['dialogue', 'music', 'sfx', 'ambience'];
 const MARKER_COLORS: readonly TimelineMarker['color'][] = ['red', 'yellow', 'green', 'blue'];
-const EASINGS: readonly EaseCurve[] = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'hold'];
+const EASINGS: readonly EaseCurve[] = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'hold', 'bezier'];
 const KEYFRAME_PROPERTIES: readonly KeyframeProperty[] = [
   'positionX',
   'positionY',
@@ -226,6 +227,17 @@ function normalizeTrack(value: unknown): TimelineTrack | null {
   };
 }
 
+function readBezier(value: unknown): BezierHandles | undefined {
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const x1 = num(record.x1, Number.NaN);
+  const y1 = num(record.y1, Number.NaN);
+  const x2 = num(record.x2, Number.NaN);
+  const y2 = num(record.y2, Number.NaN);
+  if (![x1, y1, x2, y2].every((axis) => Number.isFinite(axis))) return undefined;
+  return normalizeBezierHandles({ x1, y1, x2, y2 });
+}
+
 function normalizeKeyframe(value: unknown): ClipKeyframe | null {
   const record = asRecord(value);
   if (!record || typeof record.id !== 'string' || !record.id) return null;
@@ -243,6 +255,9 @@ function normalizeKeyframe(value: unknown): ClipKeyframe | null {
     if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/.test(param)) return null;
     keyframe.effectParam = param;
   }
+  const bezier = readBezier(record.bezier);
+  if (bezier) keyframe.bezier = bezier;
+  else if (keyframe.easing === 'bezier') keyframe.bezier = { ...DEFAULT_BEZIER };
   return keyframe;
 }
 

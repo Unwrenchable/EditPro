@@ -4,7 +4,16 @@
  * avoided: the bundled ffmpeg aborts on scale=eval=frame.
  */
 
-export type ExportEase = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' | 'hold';
+import {
+  applyEaseAmount,
+  bezierEaseExpression,
+  DEFAULT_BEZIER,
+  type BezierHandles,
+  type EaseCurve,
+} from './easing.js';
+
+export type ExportEase = EaseCurve;
+export type { BezierHandles };
 
 export type ExportKeyframeProperty = 'positionX' | 'positionY' | 'scale' | 'rotation' | 'opacity' | 'effect';
 
@@ -15,6 +24,8 @@ export interface ExportKeyframe {
   easing: ExportEase;
   /** Required when property is `effect`. */
   effectParam?: string;
+  /** Unit-square cubic used when `easing` is `bezier`. */
+  bezier?: BezierHandles;
 }
 
 const TRANSFORM: Record<Exclude<ExportKeyframeProperty, 'effect'>, number> = {
@@ -25,7 +36,16 @@ const TRANSFORM: Record<Exclude<ExportKeyframeProperty, 'effect'>, number> = {
   opacity: 1,
 };
 
-const MAPPED_EFFECTS = new Set(['blur', 'brightness', 'contrast', 'saturation', 'volume']);
+const MAPPED_EFFECTS = new Set([
+  'blur',
+  'brightness',
+  'contrast',
+  'saturation',
+  'volume',
+  'hue',
+  'exposure',
+  'sharpen',
+]);
 
 function num(value: number): string {
   return value.toFixed(3);
@@ -35,8 +55,8 @@ function escapeCommas(expression: string): string {
   return expression.replace(/,/g, '\\,');
 }
 
-function easeExpression(easing: ExportKeyframe['easing'], amount: string): string {
-  switch (easing) {
+function easeExpression(keyframe: ExportKeyframe, amount: string): string {
+  switch (keyframe.easing) {
     case 'hold':
       return '0';
     case 'linear':
@@ -47,6 +67,8 @@ function easeExpression(easing: ExportKeyframe['easing'], amount: string): strin
       return `(1-(1-(${amount}))*(1-(${amount})))`;
     case 'easeInOut':
       return `if(lt(${amount},0.5),2*(${amount})*(${amount}),1-(((-2*(${amount})+2)*(-2*(${amount})+2))/2))`;
+    case 'bezier':
+      return bezierEaseExpression(keyframe.bezier ?? DEFAULT_BEZIER, amount);
     default:
       return amount;
   }
@@ -69,7 +91,7 @@ export function keyframeExpression(
     const right = sorted[index + 1];
     const span = right.time - left.time;
     const amount = span <= 1e-6 ? '1' : `((${timeVar}-${num(left.time)})/${num(span)})`;
-    const eased = easeExpression(right.easing, amount);
+    const eased = easeExpression(right, amount);
     const lerp = `(${num(left.value)}+(${num(right.value)}-${num(left.value)})*(${eased}))`;
     expression = `if(lt(${timeVar},${num(right.time)}),${lerp},${expression})`;
   }
@@ -175,6 +197,19 @@ export function motionGraph(options: {
       );
       continue;
     }
+    if (name === 'hue') {
+      videoFilters.push(`hue=h='${escapeCommas(keyframeExpression(keys, 0, 't'))}'`);
+      continue;
+    }
+    if (name === 'exposure' || name === 'sharpen') {
+      pushWindowed(videoFilters, keys, options.duration, (value, start, end, flat) => {
+        if (Math.abs(value) < 0.02) return null;
+        const enable = flat ? '' : `:enable='between(t\\,${num(start)}\\,${num(end)})'`;
+        if (name === 'exposure') return `exposure=exposure=${value.toFixed(3)}${enable}`;
+        return `unsharp=5:5:${Math.max(0, value).toFixed(3)}${enable}`;
+      });
+      continue;
+    }
     const duration = Math.max(options.duration, 0.05);
     const steps = Math.min(8, Math.max(2, Math.ceil(duration / 0.5)));
     const constant = keyframeExpression(keys, 0, 't');
@@ -207,20 +242,29 @@ function sampleLinear(keyframes: readonly ExportKeyframe[], time: number): numbe
     if (time < left.time || time > right.time) continue;
     const span = right.time - left.time;
     const amount = span <= 1e-6 ? 1 : (time - left.time) / span;
-    const eased = amount <= 0 || right.easing === 'hold'
-      ? 0
-      : right.easing === 'linear'
-        ? amount
-        : right.easing === 'easeIn'
-          ? amount * amount
-          : right.easing === 'easeOut'
-            ? 1 - (1 - amount) * (1 - amount)
-            : amount < 0.5
-              ? 2 * amount * amount
-              : 1 - ((-2 * amount + 2) * (-2 * amount + 2)) / 2;
-    return left.value + (right.value - left.value) * eased;
+    return left.value + (right.value - left.value) * applyEaseAmount(amount, right.easing, right.bezier);
   }
   return last.value;
+}
+
+function pushWindowed(
+  videoFilters: string[],
+  keys: readonly ExportKeyframe[],
+  duration: number,
+  emit: (value: number, start: number, end: number, flat: boolean) => string | null,
+): void {
+  if (keys.length === 0) return;
+  const span = Math.max(duration, 0.05);
+  const expression = keyframeExpression(keys, keys[0].value, 't');
+  const flat = expression === num(keys[0].value);
+  const steps = flat ? 1 : Math.min(8, Math.max(2, Math.ceil(span / 0.5)));
+  for (let step = 0; step < steps; step += 1) {
+    const start = flat ? 0 : (span * step) / steps;
+    const end = flat ? span : (span * (step + 1)) / steps;
+    const value = flat ? keys[0].value : sampleLinear(keys, (start + end) / 2);
+    const filter = emit(value, start, end, flat);
+    if (filter) videoFilters.push(filter);
+  }
 }
 
 /** Shift absolute sequence times onto a segment that starts at `offset`, then account for playback rate. */
