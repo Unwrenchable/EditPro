@@ -2,6 +2,7 @@
 export const SHELL_URLS = [
   '/',
   '/index.html',
+  '/download.html',
   '/manifest.webmanifest',
   '/favicon.svg',
   '/icons/icon-192.png',
@@ -9,7 +10,7 @@ export const SHELL_URLS = [
   '/icons/apple-touch-icon.png',
 ] as const;
 
-export const SHELL_CACHE = 'editpro-shell-v1';
+export const SHELL_CACHE = 'editpro-shell-v2';
 
 /** The desktop app has its own window. Only the web and Capacitor builds install a worker. */
 export function shouldRegisterServiceWorker(options: {

@@ -114,6 +114,8 @@ The React UI talks to a platform bridge (`src/platform`). In Electron that bridg
 
 `npm run dev` is the browser session. `npm run dev:electron` is the desktop app. `npm run build` stays the desktop renderer (wasm engines are stubbed so the packaged app does not carry them). `npm run build:web` is the static bundle those engines are allowed to load in.
 
+`/download.html` is the install landing page. It reads the latest GitHub release, highlights the matching desktop installer, offers the Android APK when a release includes one, and asks Chrome or Edge to show the PWA install prompt. iPhone and iPad get Add to Home Screen steps, because those browsers do not fire an install prompt.
+
 That web bundle is an installable PWA. `public/manifest.webmanifest`, `public/sw.js`, and `public/icons/` are the install metadata and offline shell. The service worker registers only in a production web or Capacitor build, so the desktop app keeps `worker-src 'none'`. Phones, tablets, and windows narrower than 800px get a stacked layout and a simplified timeline (scrub, pinch zoom, trim, split, delete). A mouse or trackpad keeps the multitrack timeline. `vercel.json` builds with `npm run build:web` and publishes `dist` as a static site.
 
 ### Android and iOS

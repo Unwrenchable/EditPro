@@ -4,10 +4,11 @@
  * after the first successful fetch so a later offline launch still opens.
  * Cross-origin requests (ffmpeg core, Whisper weights) are left to the browser.
  */
-const CACHE = 'editpro-shell-v1';
+const CACHE = 'editpro-shell-v2';
 const SHELL = [
   '/',
   '/index.html',
+  '/download.html',
   '/manifest.webmanifest',
   '/favicon.svg',
   '/icons/icon-192.png',
