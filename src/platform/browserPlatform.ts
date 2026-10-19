@@ -1,6 +1,7 @@
 /**
- * In-process host for the browser and for Capacitor (until native plugins
- * replace the file picker and share sheet).
+ * In-process host for the browser and the Capacitor shell.
+ * Capacitor uses the system file picker and share sheet; the browser uses
+ * an input element and the Web Share API.
  */
 import {
   applyPreferencePatch,
@@ -35,6 +36,7 @@ import type {
   TranscriptionRequest,
   TranscriptionResult,
 } from './types';
+import { isNativeCancel, pickCapacitorFiles, shareCapacitorFile } from './capacitor/files';
 import { isAbortError } from './web/abort';
 import {
   blobToDataUrl,
@@ -61,6 +63,8 @@ const PROJECT_ACCEPT = '.editpro,application/json';
 type FilePicker = (accept: string, multiple: boolean) => Promise<File[] | null>;
 
 let filePicker: FilePicker = pickFilesWithInput;
+let nativeFilePicker: FilePicker | null = null;
+let nativeShare: ((file: Blob, filename: string, title?: string) => Promise<boolean>) | null = null;
 
 const jobs = new Map<string, AbortController>();
 
@@ -68,9 +72,20 @@ export function setFilePickerForTests(picker: FilePicker | null): void {
   filePicker = picker ?? pickFilesWithInput;
 }
 
+/** Tests inject the system picker without loading a device plugin. */
+export function setNativeFileAccessForTests(
+  picker: FilePicker | null,
+  share: ((file: Blob, filename: string, title?: string) => Promise<boolean>) | null = null,
+): void {
+  nativeFilePicker = picker;
+  nativeShare = share;
+}
+
 export function resetBrowserPlatformForTests(): void {
   resetBrowserStorage();
   filePicker = pickFilesWithInput;
+  nativeFilePicker = null;
+  nativeShare = null;
   for (const controller of jobs.values()) controller.abort();
   jobs.clear();
   webPlatform.resetEphemeral();
@@ -176,6 +191,14 @@ export class BrowserPlatform implements PlatformBridge {
   }
 
   async shareFile(file: Blob, filename: string, title?: string): Promise<boolean> {
+    if (this.kind === 'capacitor') {
+      try {
+        const share = nativeShare ?? shareCapacitorFile;
+        return await share(file, filename, title);
+      } catch (error) {
+        if (isNativeCancel(error)) return false;
+      }
+    }
     const nav = navigator as Navigator & {
       share?: (data: { files?: File[]; title?: string; text?: string }) => Promise<void>;
       canShare?: (data: { files?: File[] }) => boolean;
@@ -193,20 +216,29 @@ export class BrowserPlatform implements PlatformBridge {
     return false;
   }
 
+  private chooseFiles(accept: string, multiple: boolean): Promise<File[] | null> {
+    if (this.kind !== 'capacitor') return filePicker(accept, multiple);
+    const pick = nativeFilePicker ?? pickCapacitorFiles;
+    return pick(accept, multiple).catch((error: unknown) => {
+      if (isNativeCancel(error)) return null;
+      return filePicker(accept, multiple);
+    });
+  }
+
   async openImage(): Promise<string[] | null> {
-    const files = await filePicker(IMAGE_ACCEPT, true);
+    const files = await this.chooseFiles(IMAGE_ACCEPT, true);
     if (!files || files.length === 0) return null;
     return files.map((file) => rememberFile(file));
   }
 
   async openVideo(): Promise<string | null> {
-    const files = await filePicker(VIDEO_ACCEPT, false);
+    const files = await this.chooseFiles(VIDEO_ACCEPT, false);
     const file = files?.[0];
     return file ? rememberFile(file) : null;
   }
 
   async openProject(): Promise<string | null> {
-    const files = await filePicker(PROJECT_ACCEPT, false);
+    const files = await this.chooseFiles(PROJECT_ACCEPT, false);
     const file = files?.[0];
     return file ? rememberFile(file) : null;
   }
