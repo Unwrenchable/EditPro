@@ -8,6 +8,22 @@ on:
 permissions:
   contents: write
 
+# Code signing is optional. Builds stay unsigned when the secrets below are
+# absent. Signing turns on only for the platforms whose secrets are set.
+#
+# Shared certificate (macOS Developer ID .p12 and/or Windows Authenticode .pfx):
+#   CSC_LINK            Base64-encoded certificate, or an https:// URL to it.
+#   CSC_KEY_PASSWORD    Password for CSC_LINK.
+# Windows-only override, when the Windows certificate differs from CSC_LINK:
+#   WIN_CSC_LINK
+#   WIN_CSC_KEY_PASSWORD
+# macOS notarization — set ONE complete group:
+#   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
+#     Apple ID, app-specific password, and 10-character Team ID.
+#   APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER
+#     App Store Connect API key (.p8 contents, raw PEM or base64), key id, issuer UUID.
+# Linux packages are not code-signed by these secrets.
+
 jobs:
   build:
     strategy:
@@ -38,18 +54,83 @@ jobs:
         run: npm ci
 
       - name: Build & package (${{ matrix.platform }})
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run build:electron && npx electron-builder --${{ matrix.platform }} --publish always
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+
+          # An empty CSC_LINK is not the same as an unset one: the macOS
+          # packager tries to import it. Drop blank secrets so unsigned
+          # builds succeed.
+          if [ -z "${CSC_LINK:-}" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            echo "Code signing: off (CSC_LINK is not set)"
+          else
+            echo "Code signing: on (CSC_LINK is set)"
+          fi
+
+          if [ -z "${WIN_CSC_LINK:-}" ]; then
+            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+          else
+            echo "Windows certificate override: WIN_CSC_LINK is set"
+          fi
+
+          if [ "${{ matrix.platform }}" = "mac" ]; then
+            id_ready=false
+            api_ready=false
+            if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+              id_ready=true
+            fi
+            if [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]; then
+              api_ready=true
+              key_file="${RUNNER_TEMP}/AuthKey_${APPLE_API_KEY_ID}.p8"
+              if printf '%s' "${APPLE_API_KEY}" | grep -q "BEGIN PRIVATE KEY"; then
+                printf '%s\n' "${APPLE_API_KEY}" > "${key_file}"
+              else
+                printf '%s' "${APPLE_API_KEY}" | base64 --decode > "${key_file}" 2>/dev/null \
+                  || printf '%s' "${APPLE_API_KEY}" | base64 -D > "${key_file}"
+              fi
+              chmod 600 "${key_file}"
+              export APPLE_API_KEY="${key_file}"
+            fi
+            if [ "${id_ready}" = false ]; then
+              unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            fi
+            if [ "${api_ready}" = false ]; then
+              unset APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+            fi
+            if [ "${id_ready}" = true ] || [ "${api_ready}" = true ]; then
+              echo "macOS notarization: on"
+            else
+              echo "macOS notarization: off"
+            fi
+          else
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            unset APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+          fi
+
+          npm run build:electron && npx electron-builder --${{ matrix.platform }} --publish always
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: editpro-${{ matrix.platform }}-${{ github.ref_name }}
           path: |
-            dist-electron/*.dmg
-            dist-electron/*.zip
-            dist-electron/*.exe
-            dist-electron/*.AppImage
-            dist-electron/*.deb
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
           if-no-files-found: ignore

@@ -1,26 +1,23 @@
-# EditPro Build Icons
+# EditPro build icons
 
-Place your app icons here before packaging:
+The packaging icons are generated from `icon.svg` and committed so
+`electron-builder` can run without a local design toolchain.
 
-| File | Platform | Size |
-|------|----------|------|
-| `icon.icns` | macOS | 512x512 (multi-resolution) |
-| `icon.ico` | Windows | 256x256 (multi-resolution) |
-| `icon.png` | Linux (primary) | 512x512 PNG |
-| `icons/` | Linux (directory) | 16, 32, 48, 64, 128, 256, 512 px PNGs named `{size}x{size}.png` |
+| File | Platform | Notes |
+|------|----------|-------|
+| `icon.svg` | Source | Original EditPro mark. Edit this, then regenerate. |
+| `icon.icns` | macOS | Multi-resolution ICNS (up to 1024px) |
+| `icon.ico` | Windows | Multi-resolution ICO: 16, 24, 32, 48, 64, 128, 256 |
+| `icon.png` | Master raster | 1024×1024 PNG |
+| `icons/` | Linux | PNGs named `{size}x{size}.png` |
 
-Generate from a 1024x1024 PNG source using:
+Linux sizes: 16, 24, 32, 48, 64, 96, 128, 256, 512, 1024.
+
+Regenerate after changing the SVG:
+
 ```bash
-# macOS .icns
-sips -z 512 512 icon-source.png --out icon.png
-iconutil -c icns icon.iconset  # requires macOS
-
-# Windows .ico (using ImageMagick)
-convert icon-source.png -resize 256x256 icon.ico
-
-# Linux directory
-mkdir icons
-for size in 16 32 48 64 128 256 512; do
-  convert icon-source.png -resize ${size}x${size} icons/${size}x${size}.png
-done
+npm run generate:icons
 ```
+
+`package.json` points macOS at `build-resources/icon.icns`, Windows at
+`build-resources/icon.ico`, and Linux at `build-resources/icons`.

@@ -92,6 +92,7 @@ npm run dist             # Package for current platform
 npm run dist:mac         # Package for macOS (.dmg + .zip)
 npm run dist:win         # Package for Windows (.exe installer + portable)
 npm run dist:linux       # Package for Linux (.AppImage + .deb)
+npm run generate:icons   # Rebuild app icons from build-resources/icon.svg
 npm test                 # Run Vitest test suite
 npm run lint             # ESLint
 ```
@@ -121,20 +122,41 @@ EditPro/
 │   │   ├── imageFilters.ts     CSS filter pipeline, export
 │   │   └── videoUtils.ts       formatTime, buildVideoFilter, clamp
 │   └── test/                   Vitest + Testing Library tests
-├── build-resources/       App icons (see ICONS.md)
+├── build-resources/       App icon source and generated icons (see ICONS.md)
+├── LICENSE                MIT license
 ├── .agentx/               Agent-tools registry (multi-agent governance)
 │   ├── agents.json        8 specialist agent definitions
 │   ├── access_profiles.json
 │   └── README.md
 ├── dist/                  Vite renderer build output (gitignored)
-├── dist-electron/         Electron build output + packaging (gitignored)
+├── dist-electron/         Electron main-process build (gitignored)
+├── release/               electron-builder packages (gitignored)
 ├── package.json
 └── vite.config.ts
 ```
 
-### Adding app icons before packaging
+### App icons
 
-See [`build-resources/ICONS.md`](build-resources/ICONS.md) for exact file names and sizes required per platform.
+Packaging icons are already in [`build-resources/`](build-resources/ICONS.md). The source artwork is `build-resources/icon.svg`. After editing it, run `npm run generate:icons` and commit the generated `.ico`, `.icns`, and `icons/` files.
+
+### Code signing
+
+Release builds in [`.github/workflows/release.yml`](.github/workflows/release.yml) sign only when GitHub Actions secrets are present. With none of them set, the workflow still publishes unsigned artifacts.
+
+| Secret | When it is used |
+|--------|-----------------|
+| `CSC_LINK` | Base64-encoded `.p12` / `.pfx`, or an `https://` URL to the certificate. Signs macOS and Windows. |
+| `CSC_KEY_PASSWORD` | Password for `CSC_LINK`. |
+| `WIN_CSC_LINK` | Optional Windows certificate when it differs from `CSC_LINK`. |
+| `WIN_CSC_KEY_PASSWORD` | Password for `WIN_CSC_LINK`. |
+| `APPLE_ID` | Apple ID email. Notarization, together with the two secrets below. |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for that Apple ID. |
+| `APPLE_TEAM_ID` | 10-character Apple Team ID. |
+| `APPLE_API_KEY` | Alternative notarization: contents of the App Store Connect `.p8` key (raw PEM or base64). |
+| `APPLE_API_KEY_ID` | Key ID for `APPLE_API_KEY`. |
+| `APPLE_API_ISSUER` | Issuer UUID for `APPLE_API_KEY`. |
+
+Use either the Apple ID trio or the API-key trio. Linux packages are not signed by these secrets.
 
 ---
 
@@ -191,4 +213,4 @@ Eight specialist agents are defined in [`.agentx/agents.json`](.agentx/agents.js
 
 ## 📄 License
 
-MIT — free to use, modify, and distribute.
+[MIT](LICENSE) — free to use, modify, and distribute. Copyright © 2026 Jax Harlan.

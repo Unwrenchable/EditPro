@@ -50,6 +50,12 @@ function createWindow() {
 
 // ── App lifecycle ────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  app.setAboutPanelOptions({
+    applicationName: 'EditPro',
+    applicationVersion: app.getVersion(),
+    copyright: 'Copyright © 2026 Jax Harlan',
+    website: 'https://github.com/Unwrenchable/EditPro',
+  });
   buildApplicationMenu();
   createWindow();
 

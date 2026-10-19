@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>EditPro</title>
+  <desc>Original EditPro mark: a brass lens with a teal play triangle on a dark slate field.</desc>
+  <defs>
+    <linearGradient id="bg" x1="96" y1="0" x2="928" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#31445F"/>
+      <stop offset="0.42" stop-color="#1A2638"/>
+      <stop offset="1" stop-color="#0B0F16"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="36%" r="62%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glass" cx="42%" cy="38%" r="68%">
+      <stop offset="0" stop-color="#243246"/>
+      <stop offset="1" stop-color="#070A10"/>
+    </radialGradient>
+    <linearGradient id="brass" x1="250" y1="180" x2="790" y2="860" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF3C9"/>
+      <stop offset="0.32" stop-color="#F0C56A"/>
+      <stop offset="0.72" stop-color="#C48A2E"/>
+      <stop offset="1" stop-color="#7A5216"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="470" y1="390" x2="690" y2="680" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F4FFFB"/>
+      <stop offset="0.22" stop-color="#6FFFE0"/>
+      <stop offset="0.62" stop-color="#1FCBAA"/>
+      <stop offset="1" stop-color="#0B6E5C"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <circle cx="512" cy="512" r="300" fill="url(#glass)" stroke="url(#brass)" stroke-width="46"/>
+  <circle cx="512" cy="512" r="252" fill="none" stroke="#8D6A2C" stroke-width="10" opacity="0.85"/>
+  <g fill="none" stroke="#F0D48A" stroke-width="14" stroke-linecap="round">
+    <line x1="512.0" y1="174.0" x2="512.0" y2="126.0"/>
+    <line x1="681.0" y1="219.3" x2="705.0" y2="177.7"/>
+    <line x1="804.7" y1="343.0" x2="846.3" y2="319.0"/>
+    <line x1="850.0" y1="512.0" x2="898.0" y2="512.0"/>
+    <line x1="804.7" y1="681.0" x2="846.3" y2="705.0"/>
+    <line x1="681.0" y1="804.7" x2="705.0" y2="846.3"/>
+    <line x1="512.0" y1="850.0" x2="512.0" y2="898.0"/>
+    <line x1="343.0" y1="804.7" x2="319.0" y2="846.3"/>
+    <line x1="219.3" y1="681.0" x2="177.7" y2="705.0"/>
+    <line x1="174.0" y1="512.0" x2="126.0" y2="512.0"/>
+    <line x1="219.3" y1="343.0" x2="177.7" y2="319.0"/>
+    <line x1="343.0" y1="219.3" x2="319.0" y2="177.7"/>
+  </g>
+  <path d="M456 404h0l0 216 214-108z" fill="url(#teal)"/>
+  <path d="M478 452l118 60-118 18z" fill="#FFFFFF" opacity="0.22"/>
+</svg>

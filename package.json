@@ -1,5 +1,17 @@
 {
   "name": "editpro",
+  "productName": "EditPro",
+  "description": "Professional photo and video editor for macOS, Windows, and Linux.",
+  "author": {
+    "name": "Jax Harlan",
+    "url": "https://github.com/Unwrenchable"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/Unwrenchable/EditPro",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Unwrenchable/EditPro.git"
+  },
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -13,6 +25,7 @@
     "dist:mac": "npm run build:electron && electron-builder --mac --publish never",
     "dist:win": "npm run build:electron && electron-builder --win --publish never",
     "dist:linux": "npm run build:electron && electron-builder --linux --publish never",
+    "generate:icons": "node scripts/generate-icons.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
@@ -21,44 +34,92 @@
   "build": {
     "appId": "com.editpro.app",
     "productName": "EditPro",
-    "copyright": "Copyright © 2026 EditPro",
+    "copyright": "Copyright © 2026 Jax Harlan",
     "directories": {
-      "output": "dist-electron",
+      "output": "release",
       "buildResources": "build-resources"
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "!dist-electron/*-unpacked/**",
+      "!dist-electron/mac*/**",
+      "!dist-electron/*.{AppImage,deb,exe,dmg,zip,blockmap,yml}"
     ],
     "mac": {
       "category": "public.app-category.graphics-design",
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] },
-        { "target": "zip", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "icon": "build-resources/icon.icns"
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build-resources/icon.ico"
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build-resources/icons",
-      "category": "Graphics"
+      "category": "Graphics",
+      "synopsis": "Photo and video editor",
+      "maintainer": "Jax Harlan"
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
+      "selectPerMachineByDefault": false,
+      "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "EditPro"
+      "menuCategory": "EditPro",
+      "shortcutName": "EditPro",
+      "uninstallDisplayName": "EditPro",
+      "installerIcon": "build-resources/icon.ico",
+      "uninstallerIcon": "build-resources/icon.ico",
+      "license": "LICENSE",
+      "include": "build-resources/installer.nsh",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "runAfterFinish": true
     },
     "portable": {
       "artifactName": "EditPro-Portable-${version}.exe"
@@ -70,6 +131,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@resvg/resvg-js": "^2.6.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
