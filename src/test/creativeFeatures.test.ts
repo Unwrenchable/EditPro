@@ -10,6 +10,7 @@ import {
   createDefaultLiftGammaGain,
   createTitleFromPreset,
   edgePresentation,
+  encoderStatusLabel,
   envelopeGain,
   formatCube,
   liftGammaGainFilter,
@@ -305,6 +306,62 @@ describe('delivery presets and encoders', () => {
       platform: 'darwin',
     })).toMatchObject({ codec: 'libx264', hardware: false });
     expect(parseEncoderList(' V....D h264_nvenc           NVIDIA\n A....D aac')).toContain('h264_nvenc');
+    expect(parseEncoderList([
+      ' V....D h264_qsv             Intel Quick Sync',
+      ' V....D h264_amf             AMD AMF',
+      ' V....D hevc_nvenc           NVIDIA HEVC',
+    ].join('\n'))).toEqual(expect.arrayContaining(['h264_qsv', 'h264_amf', 'hevc_nvenc']));
+  });
+
+  it('names the probed hardware encoder and the software fallback', () => {
+    const nvenc = selectVideoEncoder({
+      choice: 'auto',
+      available: ['h264_qsv', 'h264_nvenc', 'libx264', 'libx265'],
+      format: 'mp4',
+      codec: 'h264',
+      platform: 'linux',
+    });
+    expect(nvenc).toMatchObject({ codec: 'h264_nvenc', hardware: true, fallback: 'libx264' });
+    expect(encoderStatusLabel('auto', nvenc)).toContain('h264_nvenc');
+    expect(encoderStatusLabel('auto', nvenc)).toContain('libx264');
+
+    const quickSync = selectVideoEncoder({
+      choice: 'auto',
+      available: ['h264_qsv', 'libx264'],
+      format: 'mp4',
+      codec: 'h264',
+      platform: 'linux',
+    });
+    expect(quickSync.codec).toBe('h264_qsv');
+
+    const amf = selectVideoEncoder({
+      choice: 'h264_amf',
+      available: ['h264_amf', 'libx264'],
+      format: 'mp4',
+      codec: 'h264',
+      platform: 'win32',
+    });
+    expect(amf).toMatchObject({ codec: 'h264_amf', hardware: true });
+
+    const hevc = selectVideoEncoder({
+      choice: 'auto',
+      available: ['hevc_nvenc', 'libx265'],
+      format: 'mp4',
+      codec: 'hevc',
+      platform: 'linux',
+    });
+    expect(hevc).toMatchObject({ codec: 'hevc_nvenc', fallback: 'libx265' });
+
+    const software = selectVideoEncoder({
+      choice: 'auto',
+      available: ['libx264'],
+      format: 'mp4',
+      codec: 'h264',
+      platform: 'linux',
+    });
+    expect(encoderStatusLabel('auto', software)).toContain('NVENC');
+    expect(encoderStatusLabel('h264_amf', { codec: 'libx264', hardware: false, fallback: 'libx264' })).toContain('not available');
+    expect(encoderStatusLabel('software', software)).toBe('Software libx264');
   });
 
   it('encodes YouTube 4K, H.265, and NVENC without changing a plain H.264 plan', () => {

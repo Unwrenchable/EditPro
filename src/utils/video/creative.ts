@@ -35,6 +35,7 @@ export {
   drawtextFilters,
   edgePresentation,
   encoderArgs,
+  encoderStatusLabel,
   envelopeGain,
   envelopeIsFlat,
   escapeDrawtext,

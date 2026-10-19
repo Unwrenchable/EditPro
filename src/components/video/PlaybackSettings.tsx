@@ -10,6 +10,7 @@ interface PlaybackSettingsProps {
   message: string | null;
   decodeLabel: string;
   previewLabel: string;
+  rendererLabel?: string;
   onResolution: (scale: PlaybackScale) => void;
   onToggleProxy: () => void;
   onCancelProxy: () => void;
@@ -30,6 +31,7 @@ const PlaybackSettings: React.FC<PlaybackSettingsProps> = ({
   message,
   decodeLabel,
   previewLabel,
+  rendererLabel,
   onResolution,
   onToggleProxy,
   onCancelProxy,
@@ -64,6 +66,9 @@ const PlaybackSettings: React.FC<PlaybackSettingsProps> = ({
         {useProxy ? 'Proxy' : 'Original'}
       </button>
       <span className="playback-meta">{previewLabel}</span>
+      {rendererLabel && (
+        <span className="playback-meta" aria-label="Preview renderer">{rendererLabel}</span>
+      )}
       <span className="playback-meta">{decodeLabel}</span>
       {status === 'running' && (
         <span className="proxy-progress-wrap">

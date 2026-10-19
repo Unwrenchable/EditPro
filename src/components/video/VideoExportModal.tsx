@@ -19,6 +19,7 @@ import {
   type ExportJob,
 } from '../../utils/video/exportPlan';
 import {
+  encoderStatusLabel,
   selectVideoEncoder,
   siblingOutputPath,
   type CreativeState,
@@ -562,6 +563,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
                 <option key={name} value={name}>{name}</option>
               ))}
             </select>
+            <p className="export-encoder-note">{encoderStatusLabel(encoder, encoderPlan)}</p>
           </div>
 
           <div className="form-row">

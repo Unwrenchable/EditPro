@@ -1409,6 +1409,21 @@ export function selectVideoEncoder(input: {
   return { codec: fallback, hardware: false, fallback };
 }
 
+/** Sentence for the export dialog so Auto shows the probed device, not only the word Auto. */
+export function encoderStatusLabel(
+  choice: EncoderChoice,
+  plan: { codec: string; hardware: boolean; fallback: string },
+): string {
+  if (plan.hardware) {
+    return `${plan.codec} · falls back to ${plan.fallback} if the device rejects the frame`;
+  }
+  if (choice === 'software') return `Software ${plan.codec}`;
+  if (choice === 'auto') {
+    return `Software ${plan.codec} · NVENC, Quick Sync, and AMF were not reported by ffmpeg`;
+  }
+  return `${choice} is not available · using ${plan.fallback}`;
+}
+
 export function encoderArgs(codec: string, crf: number, quality: number): string[] {
   if (codec === 'libx264') {
     return ['-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf), '-profile:v', 'high', '-pix_fmt', 'yuv420p'];
