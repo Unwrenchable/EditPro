@@ -217,6 +217,42 @@ contextBridge.exposeInMainWorld('editpro', {
 
   recordClientError: (report: unknown) => ipcRenderer.invoke('logs:record', report),
 
+  aiStatus: () => ipcRenderer.invoke('ai:status'),
+
+  aiDownload: (request: { kind: 'model' | 'cli'; modelId?: string }) =>
+    ipcRenderer.invoke('ai:download', request),
+
+  aiCancel: (jobId: string) => ipcRenderer.invoke('ai:cancel', jobId),
+
+  aiTranscribe: (request: { sourcePath: string; modelId: string; language?: string }) =>
+    ipcRenderer.invoke('ai:transcribe', request),
+
+  aiSaveCaptions: (request: { cues: unknown; format: 'srt' | 'vtt' }) =>
+    ipcRenderer.invoke('ai:saveCaptions', request),
+
+  aiBurnCaptions: (request: { sourcePath: string; cues: unknown }) =>
+    ipcRenderer.invoke('ai:burnCaptions', request),
+
+  aiRenderCut: (request: { sourcePath: string; ranges: { start: number; end: number }[] }) =>
+    ipcRenderer.invoke('ai:renderCut', request),
+
+  onAiEvent: (listener: (event: {
+    jobId: string;
+    type: 'progress' | 'done' | 'cancelled' | 'error';
+    percent?: number;
+    message?: string;
+  }) => void) => {
+    if (typeof listener !== 'function') throw new Error('Invalid AI subscription');
+    const wrapped = (_event: unknown, payload: {
+      jobId: string;
+      type: 'progress' | 'done' | 'cancelled' | 'error';
+      percent?: number;
+      message?: string;
+    }) => listener(payload);
+    ipcRenderer.on('ai:event', wrapped);
+    return () => ipcRenderer.removeListener('ai:event', wrapped);
+  },
+
   /**
    * Listen for menu events sent from the main process.
    * The IPC event object is not forwarded — it exposes ipcRenderer.

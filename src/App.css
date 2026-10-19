@@ -2729,3 +2729,100 @@
 .export-modal {
   width: min(520px, 94vw);
 }
+
+.ai-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.ai-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.ai-hint {
+  text-align: left;
+  margin: 0;
+  color: #777;
+}
+
+.ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #aaa;
+}
+
+.ai-field select,
+.ai-script {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1a1a1a;
+  color: #ddd;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.ai-script {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.ai-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.ai-go {
+  width: 100%;
+}
+
+.ai-on {
+  border-color: #7c5cbf;
+  color: #eee;
+}
+
+.ai-cues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-cues li {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 8px;
+  font-size: 11px;
+  color: #ccc;
+}
+
+.ai-cues span {
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-status {
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #ccc;
+}
+
+.ai-error {
+  color: #e07a7a;
+  margin: 4px 0;
+}

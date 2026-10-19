@@ -76,6 +76,47 @@ export interface ClientErrorReport {
   source?: string;
 }
 
+export interface AiEvent {
+  jobId: string;
+  type: 'progress' | 'done' | 'cancelled' | 'error';
+  percent?: number;
+  message?: string;
+}
+
+export interface AiTimeRange {
+  start: number;
+  end: number;
+}
+
+export interface AiTranscriptWord {
+  id: string;
+  text: string;
+  start: number;
+  end: number;
+}
+
+export interface AiCaptionCue {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  words: AiTranscriptWord[];
+}
+
+export interface AiModelStatus {
+  id: string;
+  label: string;
+  bytes: number;
+  ready: boolean;
+}
+
+export interface AiStatus {
+  platform: string;
+  arch: string;
+  whisperCli: boolean;
+  models: AiModelStatus[];
+}
+
 export interface EditProBridge {
   openImage(): Promise<string[] | null>;
   openVideo(): Promise<string | null>;
@@ -121,6 +162,14 @@ export interface EditProBridge {
   remindUpdateLater(): Promise<boolean>;
   dismissUpdate(): Promise<boolean>;
   recordClientError(report: ClientErrorReport): Promise<boolean>;
+  aiStatus(): Promise<AiStatus>;
+  aiDownload(request: { kind: 'model' | 'cli'; modelId?: string }): Promise<{ ready: boolean }>;
+  aiCancel(jobId: string): Promise<boolean>;
+  aiTranscribe(request: { sourcePath: string; modelId: string; language?: string }): Promise<{ cues: AiCaptionCue[] }>;
+  aiSaveCaptions(request: { cues: AiCaptionCue[]; format: 'srt' | 'vtt' }): Promise<{ outputPath: string | null }>;
+  aiBurnCaptions(request: { sourcePath: string; cues: AiCaptionCue[] }): Promise<{ outputPath: string | null }>;
+  aiRenderCut(request: { sourcePath: string; ranges: AiTimeRange[] }): Promise<{ outputPath: string | null }>;
+  onAiEvent(listener: (event: AiEvent) => void): () => void;
 }
 
 declare global {
