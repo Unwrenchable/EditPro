@@ -92,6 +92,7 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
   const [effectParam, setEffectParam] = useState('blur');
   const [easing, setEasing] = useState<EaseCurve>('linear');
   const [armedBezier, setArmedBezier] = useState<BezierHandles>(DEFAULT_BEZIER);
+  const [keyframesOpen, setKeyframesOpen] = useState(false);
 
   const orderedTracks = displayTrackOrder(tracks);
   const pps = PIXELS_PER_SECOND * zoom;
@@ -273,6 +274,17 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
           {formatTime(currentTime)} / {formatTime(duration)}
           {shuttleRate !== 0 ? `  ${shuttleRate > 0 ? '▶' : '◀'} ${Math.abs(shuttleRate)}×` : ''}
         </span>
+        <button
+          type="button"
+          className={`tl-tool-btn${keyframesOpen ? ' active' : ''}`}
+          aria-pressed={keyframesOpen}
+          aria-expanded={keyframesOpen}
+          aria-label="Keyframes"
+          title="Graph editor and easing"
+          onClick={() => setKeyframesOpen((open) => !open)}
+        >
+          Keyframes
+        </button>
         <div className="tl-zoom-row">
           <span className="tl-zoom-label">Zoom</span>
           <input
@@ -291,7 +303,6 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={stopDrag}
         onMouseLeave={stopDrag}
-        style={{ height: Math.min(totalH + 2, 280) }}
       >
         <div className="pro-tl-content-multitrack" style={{ width: trackWidth + TRACK_HEADER_W, minWidth: '100%' }}>
           <div style={{ display: 'flex' }}>
@@ -376,6 +387,8 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
         </div>
       </div>
 
+      {keyframesOpen && (
+      <div className="tl-keyframes">
       <GraphEditor
         keyframes={inspectorKeys}
         property={property}
@@ -414,6 +427,8 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
         onPatch={(keyframeId, patch, coalesceKey) => onUpdateKeyframe(selectedClip?.id ?? null, keyframeId, patch, coalesceKey)}
         onRemove={(keyframeId) => onRemoveKeyframe(selectedClip?.id ?? null, keyframeId)}
       />
+      </div>
+      )}
 
       <div className="tl-inout-bar">
         <div className="trim-row">

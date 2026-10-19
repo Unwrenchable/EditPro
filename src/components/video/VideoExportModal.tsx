@@ -127,7 +127,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
     if (!bridge.listVideoEncoders) return;
     let cancelled = false;
     void bridge.listVideoEncoders().then((names) => {
-      if (!cancelled) setAvailableEncoders(names);
+      if (!cancelled) setAvailableEncoders(Array.isArray(names) ? names : []);
     }).catch(() => undefined);
     void bridge.getPlatform().then((name) => {
       if (!cancelled && name) setHostPlatform(name);

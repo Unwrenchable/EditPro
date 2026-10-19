@@ -31,7 +31,20 @@ import MulticamPanel from './MulticamPanel';
 import { fileMediaPath } from '../../utils/mediaFiles';
 import InterchangePanel from './InterchangePanel';
 import EditorDock, { type DockTab } from './EditorDock';
+import TimelineSplitter from './TimelineSplitter';
 import type { MagicMoviePlan, VideoEditorState, VideoExportOptions } from '../../types';
+
+function initialTimelineHeight(): number {
+  if (typeof window === 'undefined') return 200;
+  // The monitor keeps the larger share. 150px still fits the toolbar and a track lane.
+  return Math.round(Math.min(240, Math.max(150, window.innerHeight * 0.26)));
+}
+
+/** Largest timeline pane that still leaves the program monitor the taller region. */
+function timelineCeiling(): number {
+  if (typeof window === 'undefined') return 240;
+  return Math.round(Math.min(240, Math.max(150, window.innerHeight * 0.32)));
+}
 
 function previewLook(state: VideoEditorState, baseFilter: string): {
   filter: string;
@@ -94,10 +107,25 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   const gpuCanvasRef = useRef<HTMLCanvasElement>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [dockTab, setDockTab] = useState<DockTab>('multicam');
+  const [dockOpen, setDockOpen] = useState(false);
+  const [timelineHeight, setTimelineHeight] = useState(initialTimelineHeight);
+  const timelineDragged = useRef(false);
   const [exportSeed, setExportSeed] = useState<{ platform: VideoExportOptions['platform']; quality: number }>({
     platform: 'youtube',
     quality: 90,
   });
+
+  useEffect(() => {
+    const fit = () => {
+      const ceiling = timelineCeiling();
+      setTimelineHeight((current) => {
+        if (!timelineDragged.current) return Math.min(initialTimelineHeight(), ceiling);
+        return Math.min(current, ceiling);
+      });
+    };
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, []);
 
   // ── Magic Movie bootstrap ──────────────────────────────────────────────────
   // Load the initial file on mount if provided (e.g. coming from Magic Movie).
@@ -253,6 +281,8 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
             </button>
           </div>
         )}
+        <div className="editor-stage">
+        <div className="editor-monitor">
         {!state.videoUrl ? (
           <VideoDropZone
             onFileSelected={(file) => editor.loadVideo(file, resolveSourcePath(file, getPlatform()))}
@@ -357,7 +387,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
               onAddMarker={handleAddMarker}
             />
 
-            <EditorDock active={dockTab} onChange={setDockTab}>
+            <EditorDock open={dockOpen} active={dockTab} onChange={setDockTab} onOpenChange={setDockOpen}>
               {dockTab === 'multicam' && (
                 <MulticamPanel
                   sequence={state.multicam}
@@ -412,7 +442,19 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
             onReplace={editor.replaceTimeline}
           />
         )}
-
+        </div>
+        {!coarse && (
+          <TimelineSplitter
+            height={timelineHeight}
+            min={150}
+            max={timelineCeiling()}
+            onChange={(next) => {
+              timelineDragged.current = true;
+              setTimelineHeight(next);
+            }}
+          />
+        )}
+        <div className="timeline-pane" style={coarse ? undefined : { height: timelineHeight }}>
         {coarse ? (
           <TouchTimeline
             duration={state.duration}
@@ -482,6 +524,8 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
             onInsertClip={handleInsertClip}
           />
         )}
+        </div>
+        </div>
 
         {state.file && (
           <div className="file-info-bar">

@@ -369,7 +369,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   const onLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (video.dataset?.previewSwap === '1') {
+    if (video.dataset?.previewSwap === '1' && modelRef.current.duration > 0.05) {
       const resume = Number(video.dataset.resumeTime ?? '0');
       delete video.dataset.previewSwap;
       delete video.dataset.resumeTime;
@@ -399,6 +399,10 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
         });
       }
       return;
+    }
+    if (video.dataset) {
+      delete video.dataset.previewSwap;
+      delete video.dataset.resumeTime;
     }
     const duration = video.duration;
     setModel((prev) => {

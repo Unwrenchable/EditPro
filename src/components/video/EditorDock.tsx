@@ -10,31 +10,48 @@ const TABS: { id: DockTab; label: string }[] = [
 ];
 
 interface EditorDockProps {
+  open: boolean;
   active: DockTab;
   onChange: (tab: DockTab) => void;
+  onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
 }
 
-/** One monitor panel at a time so short desktop windows do not stack them over the timeline. */
-const EditorDock: React.FC<EditorDockProps> = ({ active, onChange, children }) => (
-  <section className="editor-dock" aria-label="Editor panels">
+/**
+ * Multicam, scopes, titles, and interchange share one strip.
+ * It stays collapsed until a tab is chosen so the monitor keeps the height.
+ */
+const EditorDock: React.FC<EditorDockProps> = ({ open, active, onChange, onOpenChange, children }) => (
+  <section className={`editor-dock${open ? '' : ' is-collapsed'}`} aria-label="Editor panels">
     <div className="panel-tabs editor-dock-tabs" role="tablist" aria-label="Editor panels">
-      {TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          role="tab"
-          aria-selected={active === tab.id}
-          className={`panel-tab${active === tab.id ? ' active' : ''}`}
-          onClick={() => onChange(tab.id)}
-        >
-          <span className="panel-tab-label">{tab.label}</span>
-        </button>
-      ))}
+      {TABS.map((tab) => {
+        const selected = open && active === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            aria-expanded={selected}
+            className={`panel-tab${selected ? ' active' : ''}`}
+            onClick={() => {
+              if (selected) onOpenChange(false);
+              else {
+                onChange(tab.id);
+                onOpenChange(true);
+              }
+            }}
+          >
+            <span className="panel-tab-label">{tab.label}</span>
+          </button>
+        );
+      })}
     </div>
-    <div className="editor-dock-body" role="tabpanel">
-      {children}
-    </div>
+    {open && (
+      <div className="editor-dock-body" role="tabpanel">
+        {children}
+      </div>
+    )}
   </section>
 );
 
