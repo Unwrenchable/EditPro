@@ -3,6 +3,7 @@ import type { TimelineClip, VideoTransition } from '../../types';
 import {
   activeTransitionAt,
   applyGrade,
+  curvesAreNeutral,
   edgePresentation,
   liftGammaGainIsNeutral,
   titlePlacement,
@@ -65,7 +66,10 @@ const ProgramOverlay: React.FC<ProgramOverlayProps> = ({
   const outputDuration = Math.max(0, (trimEnd - trimStart) / rate);
   const outputTime = (currentTime - trimStart) / rate;
   const edge = edgePresentation(transition, outputTime, outputDuration, transitionDuration(outputDuration));
-  const gradeActive = !liftGammaGainIsNeutral(creative.liftGammaGain) || creative.lut !== null;
+  const gradeActive = !liftGammaGainIsNeutral(creative.liftGammaGain)
+    || creative.lut !== null
+    || !curvesAreNeutral(creative.curves)
+    || (creative.hdr.toneMapPreview && creative.hdr.transfer !== 'sdr');
   const cut = activeTransitionAt(clips, creative.transitions, currentTime);
   const frame = cut ? transitionFrame(cut.transition.kind, cut.progress) : null;
 
@@ -93,6 +97,9 @@ const ProgramOverlay: React.FC<ProgramOverlayProps> = ({
               { r: pixels[index] / 255, g: pixels[index + 1] / 255, b: pixels[index + 2] / 255 },
               creative.liftGammaGain,
               creative.lut,
+              creative.curves,
+              creative.lutStrength,
+              creative.hdr,
             );
             pixels[index] = Math.round(graded.r * 255);
             pixels[index + 1] = Math.round(graded.g * 255);
@@ -105,7 +112,7 @@ const ProgramOverlay: React.FC<ProgramOverlayProps> = ({
     };
     handle = window.requestAnimationFrame(draw);
     return () => window.cancelAnimationFrame(handle);
-  }, [gradeActive, lumetriFilter, creative.liftGammaGain, creative.lut, videoRef]);
+  }, [gradeActive, lumetriFilter, creative.liftGammaGain, creative.lut, creative.curves, creative.lutStrength, creative.hdr, videoRef]);
 
   const titles = creative.titles
     .map((title) => ({ title, place: titlePlacement(title, currentTime) }))

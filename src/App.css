@@ -2702,6 +2702,16 @@
   font-size: 11px;
 }
 
+.color-wheel-row { display: flex; gap: 8px; justify-content: space-between; margin-bottom: 8px; }
+.color-wheel { flex: 1; min-width: 0; }
+.color-wheel-pad { width: 100%; height: 116px; display: block; touch-action: none; cursor: crosshair; }
+.curve-editor { margin: 6px 0 10px; }
+.curve-editor-svg { width: 100%; height: 140px; display: block; background: #0d0d12; }
+.curve-editor-line { fill: none; stroke: #ddd; stroke-width: 1.6; }
+.curve-red { stroke: #e05050; }
+.curve-green { stroke: #50c878; }
+.curve-blue { stroke: #5080e0; }
+.curve-luma { stroke: #e6e6e6; }
 .lgg-wheel {
   border: 1px solid #2c2c2c;
   border-radius: 8px;

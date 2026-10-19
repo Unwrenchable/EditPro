@@ -7,6 +7,32 @@
  * No Node I/O — safe to import from the renderer and from unit tests.
  */
 
+import {
+  applyRgbCurves,
+  createDefaultHdr,
+  createIdentityCurves,
+  mixRgb,
+  normalizeHdr,
+  normalizeRgbCurves,
+  toneMapToSdr,
+} from './grade.js';
+import type { HdrSettings, RgbCurves } from './grade.js';
+
+export type { CurveChannel, CurvePoint, HdrSettings, HdrTransfer, RgbCurves } from './grade.js';
+export {
+  applyLutStrength,
+  applyRgbCurves,
+  createIdentityCurves,
+  curvesAreNeutral,
+  curvesFilter,
+  hdrMetadataArgs,
+  rgbFromWheel,
+  sampleCurve,
+  shiftWheelMaster,
+  toneMapToSdr,
+  wheelFromRgb,
+} from './grade.js';
+
 export type EncoderChoice =
   | 'auto'
   | 'software'
@@ -150,7 +176,12 @@ export interface CreativeState {
   titles: TitleClip[];
   transitions: ClipTransition[];
   liftGammaGain: LiftGammaGain;
+  /** RGB and luma curves. Identity until the user edits a point. */
+  curves: RgbCurves;
   lut: CubeLut | null;
+  /** 0–1 mix of the imported cube toward identity. */
+  lutStrength: number;
+  hdr: HdrSettings;
   loudness: LoudnessSettings;
   renderQueue: RenderQueueItem[];
   encoder: EncoderChoice;
@@ -245,7 +276,10 @@ export function createDefaultCreativeState(): CreativeState {
     titles: [],
     transitions: [],
     liftGammaGain: createDefaultLiftGammaGain(),
+    curves: createIdentityCurves(),
     lut: null,
+    lutStrength: 1,
+    hdr: createDefaultHdr(),
     loudness: createDefaultLoudness(),
     renderQueue: [],
     encoder: 'auto',
@@ -460,7 +494,10 @@ export function normalizeCreativeState(value: unknown): CreativeState {
       gamma: normalizeRgb(grade?.gamma, defaults.liftGammaGain.gamma, 0.2, 3),
       gain: normalizeRgb(grade?.gain, defaults.liftGammaGain.gain, 0, 4),
     },
+    curves: normalizeRgbCurves(record.curves),
     lut: normalizeLut(record.lut),
+    lutStrength: clamp(num(record.lutStrength, defaults.lutStrength), 0, 1),
+    hdr: normalizeHdr(record.hdr),
     loudness: {
       targetLufs: clamp(num(asRecord(record.loudness)?.targetLufs, defaults.loudness.targetLufs), -36, -5),
       normalizeOnExport: asRecord(record.loudness)?.normalizeOnExport === true,
@@ -1007,9 +1044,22 @@ export function sampleLut(lut: CubeLut, rgb: RgbTriplet): RgbTriplet {
   return mix(mix(c00, c10, fg), mix(c01, c11, fg), fb);
 }
 
-export function applyGrade(rgb: RgbTriplet, grade: LiftGammaGain, lut: CubeLut | null): RgbTriplet {
-  const lifted = applyLiftGammaGain(rgb, grade);
-  return lut ? sampleLut(lut, lifted) : lifted;
+export function applyGrade(
+  rgb: RgbTriplet,
+  grade: LiftGammaGain,
+  lut: CubeLut | null,
+  curves?: RgbCurves,
+  lutStrength = 1,
+  toneMap: HdrSettings | null = null,
+): RgbTriplet {
+  let next = applyLiftGammaGain(rgb, grade);
+  next = applyRgbCurves(next, curves ?? createIdentityCurves());
+  if (lut && lutStrength > 0.001) {
+    const graded = sampleLut(lut, next);
+    next = mixRgb(next, graded, lutStrength);
+  }
+  if (toneMap?.toneMapPreview && toneMap.transfer !== 'sdr') next = toneMapToSdr(next, toneMap.transfer);
+  return next;
 }
 
 export function formatCube(lut: CubeLut): string {

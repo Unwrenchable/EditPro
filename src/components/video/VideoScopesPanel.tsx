@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { computeWaveform, computeVectorscope } from '../../utils/video/scopes';
+import { computeHistogram, computeWaveform, computeVectorscope } from '../../utils/video/scopes';
 
-type ScopeMode = 'waveform' | 'vectorscope';
+type ScopeMode = 'waveform' | 'vectorscope' | 'histogram';
 
 interface VideoScopesPanelProps {
   /** The live <video> element to sample frames from. May be null before a file is loaded. */
@@ -23,6 +23,7 @@ const VideoScopesPanel: React.FC<VideoScopesPanelProps> = ({ videoRef }) => {
   const [mode, setMode] = useState<ScopeMode>('waveform');
   const waveCanvasRef   = useRef<HTMLCanvasElement>(null);
   const vectorCanvasRef = useRef<HTMLCanvasElement>(null);
+  const histogramCanvasRef = useRef<HTMLCanvasElement>(null);
   const offscreenRef    = useRef<HTMLCanvasElement | null>(null);
   const rafRef          = useRef<number | null>(null);
 
@@ -73,6 +74,34 @@ const VideoScopesPanel: React.FC<VideoScopesPanelProps> = ({ videoRef }) => {
     ctx.fillText('100', 2, 10);
     ctx.fillText('50', 2, WAVEFORM_H / 2 + 4);
     ctx.fillText('0', 2, WAVEFORM_H - 2);
+  }, []);
+
+  const drawHistogram = useCallback((imageData: ImageData) => {
+    const canvas = histogramCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const histogram = computeHistogram(imageData);
+    const peak = Math.max(1, ...histogram.luma, ...histogram.red, ...histogram.green, ...histogram.blue);
+    ctx.clearRect(0, 0, WAVEFORM_W, WAVEFORM_H);
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, WAVEFORM_W, WAVEFORM_H);
+    const drawChannel = (bins: number[], color: string) => {
+      ctx.beginPath();
+      bins.forEach((count, bin) => {
+        const x = (bin / 255) * WAVEFORM_W;
+        const y = WAVEFORM_H - (count / peak) * (WAVEFORM_H - 8);
+        if (bin === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    };
+    drawChannel(histogram.luma, 'rgba(230,230,230,0.9)');
+    drawChannel(histogram.red, 'rgba(224,80,80,0.85)');
+    drawChannel(histogram.green, 'rgba(80,200,120,0.75)');
+    drawChannel(histogram.blue, 'rgba(80,140,230,0.75)');
   }, []);
 
   const drawVectorscope = useCallback((imageData: ImageData) => {
@@ -147,8 +176,9 @@ const VideoScopesPanel: React.FC<VideoScopesPanelProps> = ({ videoRef }) => {
     const imageData = ctx.getImageData(0, 0, sampleW, sampleH);
 
     if (mode === 'waveform') drawWaveform(imageData);
+    else if (mode === 'histogram') drawHistogram(imageData);
     else drawVectorscope(imageData);
-  }, [videoRef, getOffscreen, mode, drawWaveform, drawVectorscope]);
+  }, [videoRef, getOffscreen, mode, drawWaveform, drawVectorscope, drawHistogram]);
 
   // RAF loop — only run while the panel is mounted and video exists
   useEffect(() => {
@@ -190,6 +220,15 @@ const VideoScopesPanel: React.FC<VideoScopesPanelProps> = ({ videoRef }) => {
           >
             Vectorscope
           </button>
+          <button
+            role="tab"
+            aria-selected={mode === 'histogram'}
+            className={`scope-tab${mode === 'histogram' ? ' active' : ''}`}
+            onClick={() => setMode('histogram')}
+            aria-label="Histogram scope"
+          >
+            Histogram
+          </button>
         </div>
       </div>
 
@@ -201,6 +240,14 @@ const VideoScopesPanel: React.FC<VideoScopesPanelProps> = ({ videoRef }) => {
             height={WAVEFORM_H}
             className="scope-canvas"
             aria-label="Waveform display"
+          />
+        ) : mode === 'histogram' ? (
+          <canvas
+            ref={histogramCanvasRef}
+            width={WAVEFORM_W}
+            height={WAVEFORM_H}
+            className="scope-canvas"
+            aria-label="Histogram display"
           />
         ) : (
           <canvas
