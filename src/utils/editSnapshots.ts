@@ -1,0 +1,237 @@
+import type {
+  AudioCategory,
+  AudioTrackSettings,
+  AutoReframeAspect,
+  CropRect,
+  LumetriColor,
+  PhotoAdjustments,
+  PhotoFilterName,
+  TimelineClip,
+  TimelineMarker,
+  TimelineTrack,
+} from '../types';
+import { DEFAULT_ADJUSTMENTS } from './imageFilters';
+import { DEFAULT_AUDIO, DEFAULT_LUMETRI } from './videoUtils';
+
+const PHOTO_FILTERS: readonly PhotoFilterName[] = [
+  'none',
+  'grayscale',
+  'sepia',
+  'vivid',
+  'cool',
+  'warm',
+  'fade',
+  'dramatic',
+  'matte',
+];
+
+const ASPECTS: readonly AutoReframeAspect[] = ['16:9', '9:16', '1:1', '4:5', '4:3', 'original'];
+const AUDIO_CATEGORIES: readonly AudioCategory[] = ['dialogue', 'music', 'sfx', 'ambience'];
+const MARKER_COLORS: readonly TimelineMarker['color'][] = ['red', 'yellow', 'green', 'blue'];
+
+/** Creative photo state. Transport and file handles live outside the snapshot. */
+export interface PhotoEditSnapshot {
+  adjustments: PhotoAdjustments;
+  filter: PhotoFilterName;
+  rotation: number;
+  flipH: boolean;
+  flipV: boolean;
+  crop: CropRect | null;
+}
+
+/**
+ * Editorial video state, including the timeline.
+ * Playback position, play/pause, and duration are not part of the snapshot.
+ */
+export interface VideoEditSnapshot {
+  trimStart: number;
+  trimEnd: number;
+  playbackRate: number;
+  volume: number;
+  isMuted: boolean;
+  lumetri: LumetriColor;
+  audio: AudioTrackSettings;
+  markers: TimelineMarker[];
+  autoReframe: AutoReframeAspect;
+  tracks: TimelineTrack[];
+  clips: TimelineClip[];
+}
+
+export interface MediaBinding {
+  file: File | null;
+  url: string | null;
+  path: string | null;
+  name: string | null;
+  missing: boolean;
+}
+
+export function createDefaultPhotoEdits(): PhotoEditSnapshot {
+  return {
+    adjustments: { ...DEFAULT_ADJUSTMENTS },
+    filter: 'none',
+    rotation: 0,
+    flipH: false,
+    flipV: false,
+    crop: null,
+  };
+}
+
+export function createDefaultTracks(): TimelineTrack[] {
+  return [
+    { id: 'v1', type: 'video', name: 'V1', muted: false, locked: false },
+    { id: 'a1', type: 'audio', name: 'A1', muted: false, locked: false },
+  ];
+}
+
+export function createDefaultVideoEdits(): VideoEditSnapshot {
+  return {
+    trimStart: 0,
+    trimEnd: 0,
+    playbackRate: 1,
+    volume: 1,
+    isMuted: false,
+    lumetri: structuredClone(DEFAULT_LUMETRI),
+    audio: { ...DEFAULT_AUDIO },
+    markers: [],
+    autoReframe: 'original',
+    tracks: createDefaultTracks(),
+    clips: [],
+  };
+}
+
+function num(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function bool(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function str(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
+}
+
+function pickNumbers<T extends object>(defaults: T, input: unknown): T {
+  const source = asRecord(input) ?? {};
+  const out = { ...defaults };
+  for (const key of Object.keys(defaults) as (keyof T)[]) {
+    const def = defaults[key];
+    const raw = source[key as string];
+    if (typeof def === 'number') {
+      (out as Record<string, unknown>)[key as string] = num(raw, def);
+    } else if (typeof def === 'boolean') {
+      (out as Record<string, unknown>)[key as string] = bool(raw, def as boolean);
+    } else if (typeof def === 'string') {
+      (out as Record<string, unknown>)[key as string] = str(raw, def as string);
+    } else if (def && typeof def === 'object') {
+      (out as Record<string, unknown>)[key as string] = pickNumbers(def, raw);
+    }
+  }
+  return out;
+}
+
+function normalizeCrop(value: unknown): CropRect | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const crop = {
+    x: record.x,
+    y: record.y,
+    width: record.width,
+    height: record.height,
+  };
+  if (![crop.x, crop.y, crop.width, crop.height].every((n) => typeof n === 'number' && Number.isFinite(n))) {
+    return null;
+  }
+  return crop as CropRect;
+}
+
+export function normalizePhotoEdits(input: unknown): PhotoEditSnapshot {
+  const defaults = createDefaultPhotoEdits();
+  const record = asRecord(input);
+  if (!record) return defaults;
+  return {
+    adjustments: pickNumbers(defaults.adjustments, record.adjustments),
+    filter: oneOf(record.filter, PHOTO_FILTERS, 'none'),
+    rotation: num(record.rotation, 0),
+    flipH: bool(record.flipH, false),
+    flipV: bool(record.flipV, false),
+    crop: normalizeCrop(record.crop),
+  };
+}
+
+function normalizeMarker(value: unknown): TimelineMarker | null {
+  const record = asRecord(value);
+  if (!record || typeof record.id !== 'string' || !record.id) return null;
+  return {
+    id: record.id,
+    time: num(record.time, 0),
+    label: str(record.label, ''),
+    color: oneOf(record.color, MARKER_COLORS, 'yellow'),
+  };
+}
+
+function normalizeTrack(value: unknown): TimelineTrack | null {
+  const record = asRecord(value);
+  if (!record || typeof record.id !== 'string' || !record.id) return null;
+  const type = record.type === 'audio' ? 'audio' : record.type === 'video' ? 'video' : null;
+  if (!type) return null;
+  return {
+    id: record.id,
+    type,
+    name: str(record.name, type === 'video' ? 'V' : 'A'),
+    muted: bool(record.muted, false),
+    locked: bool(record.locked, false),
+  };
+}
+
+function normalizeClip(value: unknown): TimelineClip | null {
+  const record = asRecord(value);
+  if (!record || typeof record.id !== 'string' || !record.id) return null;
+  if (typeof record.src !== 'string' || typeof record.trackId !== 'string') return null;
+  return {
+    id: record.id,
+    src: record.src,
+    trackId: record.trackId,
+    startTime: num(record.startTime, 0),
+    endTime: num(record.endTime, 0),
+    inPoint: num(record.inPoint, 0),
+    outPoint: num(record.outPoint, 0),
+  };
+}
+
+export function normalizeVideoEdits(input: unknown): VideoEditSnapshot {
+  const defaults = createDefaultVideoEdits();
+  const record = asRecord(input);
+  if (!record) return defaults;
+  const markers = Array.isArray(record.markers) ? record.markers.map(normalizeMarker).filter((m) => m !== null) : [];
+  const tracks = Array.isArray(record.tracks) ? record.tracks.map(normalizeTrack).filter((t) => t !== null) : defaults.tracks;
+  const clips = Array.isArray(record.clips) ? record.clips.map(normalizeClip).filter((c) => c !== null) : [];
+  const audio = pickNumbers(defaults.audio, record.audio);
+  audio.category = oneOf(asRecord(record.audio)?.category, AUDIO_CATEGORIES, defaults.audio.category);
+  return {
+    trimStart: num(record.trimStart, 0),
+    trimEnd: num(record.trimEnd, 0),
+    playbackRate: num(record.playbackRate, 1),
+    volume: num(record.volume, 1),
+    isMuted: bool(record.isMuted, false),
+    lumetri: pickNumbers(defaults.lumetri, record.lumetri),
+    audio,
+    markers,
+    autoReframe: oneOf(record.autoReframe, ASPECTS, 'original'),
+    tracks,
+    clips,
+  };
+}
+
+export function normalizeTimelineZoom(value: unknown): number {
+  const zoom = num(value, 1);
+  return Math.min(8, Math.max(0.5, zoom));
+}

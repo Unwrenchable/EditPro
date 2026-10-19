@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
-import { useVideoEditor } from '../../hooks/useVideoEditor';
+import { useEditorSession } from '../../session/editorSessionContext';
 import VideoDropZone from './VideoDropZone';
 import ProTimeline from './ProTimeline';
 import VideoControls from './VideoControls';
@@ -117,10 +117,9 @@ interface VideoEditorProps {
 }
 
 const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile }) => {
-  // Component owns the video ref (correct React pattern per react-hooks/refs)
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const editor = useVideoEditor(videoRef);
+  const { video: editor, videoRef, relinkVideo } = useEditorSession();
   const { state } = editor;
+  const { loadVideo, applyMagicPlan } = editor;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -129,10 +128,8 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile
   // `initialFile` and `editor.loadVideo` are both stable references for the
   // lifetime of this component instance (key-based remount in App).
   useEffect(() => {
-    if (initialFile) {
-      editor.loadVideo(initialFile);
-    }
-  }, [initialFile, editor]);
+    if (initialFile) loadVideo(initialFile);
+  }, [initialFile, loadVideo]);
 
   // Apply the magic plan once the video has loaded (duration becomes > 0)
   const magicAppliedRef = useRef(false);
@@ -140,17 +137,8 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile
     if (!initialMagicPlan || !state.duration || magicAppliedRef.current) return;
     magicAppliedRef.current = true;
 
-    editor.setLumetri(initialMagicPlan.lumetri);
-    editor.setAudio(initialMagicPlan.audio);
-    editor.setAutoReframe(initialMagicPlan.autoReframe);
-    if (initialMagicPlan.playbackRate !== 1) {
-      editor.setPlaybackRate(initialMagicPlan.playbackRate);
-    }
-    initialMagicPlan.scenes.forEach((scene) => {
-      const t = scene.startPct * state.duration;
-      editor.addMarker(t, scene.label, scene.color);
-    });
-  }, [state.duration, initialMagicPlan, editor]);
+    applyMagicPlan(initialMagicPlan, state.duration);
+  }, [state.duration, initialMagicPlan, applyMagicPlan]);
 
   const videoFilter = buildLumetriFilter(state.lumetri);
   const reframeOverlay = getAutoReframeOverlay(state.autoReframe);
@@ -246,6 +234,14 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile
   return (
     <div className="editor-layout">
       <div className="editor-main">
+        {state.mediaMissing && (
+          <div className="info-box media-missing-banner">
+            <span>Video file is offline{state.mediaName ? `: ${state.mediaName}` : ''}.</span>
+            <button type="button" className="btn-secondary" onClick={relinkVideo}>
+              Relink
+            </button>
+          </div>
+        )}
         {!state.videoUrl ? (
           <VideoDropZone onFileSelected={editor.loadVideo} videoUrl={state.videoUrl} />
         ) : (

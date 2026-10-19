@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeTheme } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,14 @@ function createWindow() {
     mainWindow?.show();
   });
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.alt || input.shift || input.isComposing) return;
+    if (!(input.control || input.meta)) return;
+    if (input.key.toLowerCase() !== 'y') return;
+    event.preventDefault();
+    mainWindow?.webContents.send('menu:redo');
+  });
+
   if (isDev) {
     const devPort = process.env.DEV_PORT ?? '5173';
     void mainWindow.loadURL(`http://localhost:${devPort}`);
@@ -50,6 +59,7 @@ function createWindow() {
 
 // ── App lifecycle ────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  bootSession();
   buildApplicationMenu();
   createWindow();
 
@@ -60,6 +70,15 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  try {
+    const meta = readMetaSync();
+    writeMetaSync({ ...meta, unclean: false });
+  } catch {
+    // Quitting should not be blocked by a session-file failure.
+  }
 });
 
 // ── IPC: File dialogs ────────────────────────────────────────────────────────
@@ -159,6 +178,260 @@ ipcMain.handle('shell:openExternal', (_event, url: string) => {
   }
 });
 
+// ── Project files, recents, and crash recovery ───────────────────────────────
+// recoveryKind stays in sync with src/utils/sessionStore.ts.
+
+const MAX_TEXT_BYTES = 8_000_000;
+
+interface MainSessionMeta {
+  unclean: boolean;
+  dirty: boolean;
+  projectPath: string | null;
+  autosaveUpdatedAt: string | null;
+  lastSaveAt: string | null;
+  pendingKind: 'crash' | 'autosave' | null;
+}
+
+let launchRecoveryKind: 'crash' | 'autosave' | null = null;
+
+function sessionDirectory(): string {
+  return path.join(app.getPath('userData'), 'editpro-session');
+}
+
+function sessionPath(name: string): string {
+  return path.join(sessionDirectory(), name);
+}
+
+function emptyMeta(): MainSessionMeta {
+  return {
+    unclean: false,
+    dirty: false,
+    projectPath: null,
+    autosaveUpdatedAt: null,
+    lastSaveAt: null,
+    pendingKind: null,
+  };
+}
+
+function recoveryKind(meta: MainSessionMeta, hasAutosave: boolean): 'crash' | 'autosave' | null {
+  if (!hasAutosave || !meta.dirty) return null;
+  return meta.unclean ? 'crash' : 'autosave';
+}
+
+function readMetaSync(): MainSessionMeta {
+  try {
+    const parsed = JSON.parse(fsSync.readFileSync(sessionPath('session.json'), 'utf8')) as Partial<MainSessionMeta>;
+    const pendingKind = parsed.pendingKind === 'crash' || parsed.pendingKind === 'autosave' ? parsed.pendingKind : null;
+    return {
+      unclean: Boolean(parsed.unclean),
+      dirty: Boolean(parsed.dirty),
+      projectPath: typeof parsed.projectPath === 'string' ? parsed.projectPath : null,
+      autosaveUpdatedAt: typeof parsed.autosaveUpdatedAt === 'string' ? parsed.autosaveUpdatedAt : null,
+      lastSaveAt: typeof parsed.lastSaveAt === 'string' ? parsed.lastSaveAt : null,
+      pendingKind,
+    };
+  } catch {
+    return emptyMeta();
+  }
+}
+
+function writeMetaSync(meta: MainSessionMeta): void {
+  fsSync.mkdirSync(sessionDirectory(), { recursive: true });
+  atomicWriteSync(sessionPath('session.json'), JSON.stringify(meta));
+}
+
+function atomicWriteSync(filePath: string, contents: string): void {
+  const tmp = `${filePath}.${process.pid}.tmp`;
+  fsSync.writeFileSync(tmp, contents, 'utf8');
+  fsSync.renameSync(tmp, filePath);
+}
+
+async function atomicWrite(filePath: string, contents: string): Promise<void> {
+  const tmp = `${filePath}.${process.pid}.tmp`;
+  await fs.writeFile(tmp, contents, 'utf8');
+  await fs.rename(tmp, filePath);
+}
+
+function assertPath(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 4096 || value.includes('\0')) {
+    throw new Error('Invalid file path');
+  }
+  return value;
+}
+
+function assertText(value: unknown): string {
+  if (typeof value !== 'string' || value.length > MAX_TEXT_BYTES) {
+    throw new Error('Invalid file contents');
+  }
+  return value;
+}
+
+function assertProjectPath(value: unknown): string {
+  const filePath = assertPath(value);
+  if (!filePath.toLowerCase().endsWith('.editpro')) {
+    throw new Error('Project files must use the .editpro extension');
+  }
+  return filePath;
+}
+
+function optionalProjectPath(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  return assertPath(value);
+}
+
+function bootSession(): void {
+  try {
+    fsSync.mkdirSync(sessionDirectory(), { recursive: true });
+    const previous = readMetaSync();
+    let autosave = '';
+    try {
+      autosave = fsSync.readFileSync(sessionPath('autosave.editpro'), 'utf8');
+    } catch {
+      autosave = '';
+    }
+    launchRecoveryKind = recoveryKind(previous, Boolean(autosave.trim()));
+    writeMetaSync({
+      unclean: true,
+      dirty: Boolean(launchRecoveryKind),
+      projectPath: previous.projectPath,
+      autosaveUpdatedAt: previous.autosaveUpdatedAt,
+      lastSaveAt: previous.lastSaveAt,
+      pendingKind: launchRecoveryKind,
+    });
+  } catch (error) {
+    console.error('EditPro session boot failed', error);
+    launchRecoveryKind = null;
+  }
+}
+
+function readRecovery(): {
+  kind: 'crash' | 'autosave';
+  autosave: string;
+  projectPath: string | null;
+  savedAt: string | null;
+} | null {
+  if (!launchRecoveryKind) return null;
+  const meta = readMetaSync();
+  if (!meta.dirty) return null;
+  try {
+    const autosave = fsSync.readFileSync(sessionPath('autosave.editpro'), 'utf8');
+    if (!autosave.trim()) return null;
+    return {
+      kind: launchRecoveryKind,
+      autosave,
+      projectPath: meta.projectPath,
+      savedAt: meta.autosaveUpdatedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function rememberAutosave(contents: string, projectPath: string | null): void {
+  fsSync.mkdirSync(sessionDirectory(), { recursive: true });
+  atomicWriteSync(sessionPath('autosave.editpro'), contents);
+  const meta = readMetaSync();
+  writeMetaSync({
+    ...meta,
+    unclean: true,
+    dirty: true,
+    projectPath,
+    autosaveUpdatedAt: new Date().toISOString(),
+  });
+}
+
+ipcMain.handle('dialog:openProject', async () => {
+  if (!mainWindow) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Open EditPro Project',
+    filters: [
+      { name: 'EditPro Project', extensions: ['editpro'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  });
+  if (canceled || filePaths.length === 0) return null;
+  return filePaths[0];
+});
+
+ipcMain.handle('dialog:saveProject', async (_event, defaultName: string) => {
+  if (!mainWindow) return null;
+  const suggested = typeof defaultName === 'string' && defaultName.trim() ? defaultName : 'Untitled.editpro';
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save EditPro Project',
+    defaultPath: suggested.toLowerCase().endsWith('.editpro') ? suggested : `${suggested}.editpro`,
+    filters: [{ name: 'EditPro Project', extensions: ['editpro'] }],
+  });
+  if (canceled || !filePath) return null;
+  return filePath.toLowerCase().endsWith('.editpro') ? filePath : `${filePath}.editpro`;
+});
+
+ipcMain.handle('fs:readTextFile', async (_event, filePath: unknown) => {
+  return fs.readFile(assertPath(filePath), 'utf8');
+});
+
+ipcMain.handle('fs:writeTextFile', async (_event, filePath: unknown, contents: unknown) => {
+  await atomicWrite(assertProjectPath(filePath), assertText(contents));
+  return true;
+});
+
+ipcMain.handle('recent:read', async () => {
+  try {
+    return await fs.readFile(sessionPath('recent.json'), 'utf8');
+  } catch {
+    return '[]';
+  }
+});
+
+ipcMain.handle('recent:write', async (_event, contents: unknown) => {
+  const text = assertText(contents);
+  JSON.parse(text);
+  fsSync.mkdirSync(sessionDirectory(), { recursive: true });
+  await atomicWrite(sessionPath('recent.json'), text);
+  return true;
+});
+
+ipcMain.handle('session:getRecovery', () => readRecovery());
+
+ipcMain.handle('session:autosave', async (_event, contents: unknown, projectPath: unknown) => {
+  rememberAutosave(assertText(contents), optionalProjectPath(projectPath));
+  return true;
+});
+
+ipcMain.on('session:autosaveSync', (event, contents: unknown, projectPath: unknown) => {
+  try {
+    rememberAutosave(assertText(contents), optionalProjectPath(projectPath));
+    event.returnValue = true;
+  } catch {
+    event.returnValue = false;
+  }
+});
+
+ipcMain.handle('session:noteSaved', (_event, projectPath: unknown) => {
+  const meta = readMetaSync();
+  writeMetaSync({
+    ...meta,
+    dirty: false,
+    projectPath: assertPath(projectPath),
+    lastSaveAt: new Date().toISOString(),
+  });
+  return true;
+});
+
+ipcMain.handle('session:discardRecovery', async () => {
+  await fs.rm(sessionPath('autosave.editpro'), { force: true });
+  const meta = readMetaSync();
+  writeMetaSync({ ...meta, dirty: false, autosaveUpdatedAt: null, pendingKind: null });
+  launchRecoveryKind = null;
+  return true;
+});
+
+ipcMain.handle('session:markClean', () => {
+  const meta = readMetaSync();
+  writeMetaSync({ ...meta, unclean: false });
+  return true;
+});
+
 // ── Application menu ─────────────────────────────────────────────────────────
 
 function buildApplicationMenu() {
@@ -190,12 +463,28 @@ function buildApplicationMenu() {
       label: '&File',
       submenu: [
         {
-          label: 'Open Image…',
+          label: 'Open Project…',
           accelerator: 'CmdOrCtrl+O',
+          click: () => mainWindow?.webContents.send('menu:openProject'),
+        },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => mainWindow?.webContents.send('menu:save'),
+        },
+        {
+          label: 'Save As…',
+          accelerator: 'CmdOrCtrl+Shift+S',
+          click: () => mainWindow?.webContents.send('menu:saveAs'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Import Image…',
+          accelerator: 'CmdOrCtrl+I',
           click: () => mainWindow?.webContents.send('menu:openImage'),
         },
         {
-          label: 'Open Video…',
+          label: 'Import Video…',
           accelerator: 'CmdOrCtrl+Shift+O',
           click: () => mainWindow?.webContents.send('menu:openVideo'),
         },
@@ -214,8 +503,16 @@ function buildApplicationMenu() {
     {
       label: '&Edit',
       submenu: [
-        { role: 'undo' as const },
-        { role: 'redo' as const },
+        {
+          label: 'Undo',
+          accelerator: 'CmdOrCtrl+Z',
+          click: () => mainWindow?.webContents.send('menu:undo'),
+        },
+        {
+          label: 'Redo',
+          accelerator: 'CmdOrCtrl+Shift+Z',
+          click: () => mainWindow?.webContents.send('menu:redo'),
+        },
         { type: 'separator' as const },
         { role: 'cut' as const },
         { role: 'copy' as const },
