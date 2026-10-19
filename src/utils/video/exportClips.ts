@@ -1,3 +1,4 @@
+import type { ClipKeyframe } from '../../types';
 import { fileUrlToPath, isFilesystemPath, type ExportSourceClip } from './exportPlan';
 
 interface ClipLike {
@@ -6,6 +7,7 @@ interface ClipLike {
   startTime: number;
   inPoint: number;
   outPoint: number;
+  keyframes?: ClipKeyframe[];
 }
 
 interface TrackLike {
@@ -32,13 +34,23 @@ export function timelineClipsForExport(
       skippedUnreadable += 1;
       continue;
     }
-    exported.push({
+    const exportedClip: ExportSourceClip = {
       sourcePath: fileUrlToPath(clip.src),
       trackType: track.type,
       startTime: clip.startTime,
       inPoint: clip.inPoint,
       outPoint: clip.outPoint,
-    });
+    };
+    if (clip.keyframes && clip.keyframes.length > 0) {
+      exportedClip.keyframes = clip.keyframes.map((keyframe) => ({
+        time: keyframe.time,
+        property: keyframe.property,
+        value: keyframe.value,
+        easing: keyframe.easing,
+        ...(keyframe.effectParam ? { effectParam: keyframe.effectParam } : {}),
+      }));
+    }
+    exported.push(exportedClip);
   }
   return { clips: exported, skippedUnreadable };
 }

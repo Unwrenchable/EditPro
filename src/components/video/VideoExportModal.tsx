@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AudioTrackSettings,
   AutoReframeAspect,
+  ClipKeyframe,
   LumetriColor,
   TimelineClip,
   TimelineTrack,
@@ -34,6 +35,7 @@ interface VideoExportModalProps {
   transition: VideoTransition;
   clips: TimelineClip[];
   tracks: TimelineTrack[];
+  programKeyframes?: ClipKeyframe[];
   initialPlatform: VideoExportOptions['platform'];
   initialQuality: number;
   onTransitionChange: (transition: VideoTransition) => void;
@@ -73,6 +75,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
   transition,
   clips,
   tracks,
+  programKeyframes = [],
   initialPlatform,
   initialQuality,
   onTransitionChange,
@@ -142,6 +145,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
       autoReframe: aspect,
       transition,
       clips: clipPlan.clips,
+      ...(programKeyframes.length > 0 ? { keyframes: programKeyframes } : {}),
       options: { resolution, frameRate, format, quality },
     };
     try {
@@ -151,7 +155,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
     }
   }, [
     sourcePath, trimStart, trimEnd, playbackRate, volume, muted, tracks,
-    lumetri, audio, aspect, transition, clipPlan.clips, resolution, frameRate, format, quality,
+    lumetri, audio, aspect, transition, clipPlan.clips, programKeyframes, resolution, frameRate, format, quality,
   ]);
 
   const warnings = useMemo(() => {
@@ -230,6 +234,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
       autoReframe: aspect,
       transition,
       clips: clipPlan.clips,
+      ...(programKeyframes.length > 0 ? { keyframes: programKeyframes } : {}),
       options: { resolution, frameRate, format, quality },
     };
 

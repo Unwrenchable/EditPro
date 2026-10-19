@@ -2,11 +2,16 @@
  * Pure video-export planner.
  *
  * Turns an edit (trim, Lumetri, Essential Sound, auto-reframe, transitions,
- * timeline clips) into an argv array for the bundled ffmpeg binary.
+ * timeline clips, and keyframed motion) into an argv array for the bundled ffmpeg binary.
  * No Node I/O and no child_process — safe to unit test and to bundle
  * into the renderer for preflight checks. The Electron main process is the
  * only place that spawns ffmpeg.
  */
+
+import { motionGraph, prepareKeyframes, type ExportKeyframe } from './motion';
+
+export { keyframeExpression, motionGraph, prepareKeyframes } from './motion';
+export type { ExportEase, ExportKeyframe, ExportKeyframeProperty } from './motion';
 
 export class ExportPlanError extends Error {
   constructor(message: string) {
@@ -90,6 +95,8 @@ export interface ExportSourceClip {
   startTime: number;
   inPoint: number;
   outPoint: number;
+  /** Times are seconds from the clip's timeline start. */
+  keyframes?: ExportKeyframe[];
 }
 
 export interface ExportOptions {
@@ -115,6 +122,8 @@ export interface ExportJob {
   autoReframe: AutoReframeAspect;
   transition: VideoTransition;
   clips: ExportSourceClip[];
+  /** Program keyframes in absolute sequence time. Applied to the source segment. */
+  keyframes?: ExportKeyframe[];
   options: ExportOptions;
 }
 
@@ -167,6 +176,8 @@ const FORMATS: readonly ExportFormat[] = ['mp4', 'webm', 'mov'];
 const TRANSITIONS: readonly VideoTransition[] = TRANSITION_OPTIONS.map((t) => t.id);
 const ASPECTS: readonly AutoReframeAspect[] = ['16:9', '9:16', '1:1', '4:5', '4:3', 'original'];
 const CATEGORIES: readonly ExportAudioCategory[] = ['dialogue', 'music', 'sfx', 'ambience'];
+const EASES = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'hold'] as const;
+const KEYFRAME_PROPERTIES = ['positionX', 'positionY', 'scale', 'rotation', 'opacity', 'effect'] as const;
 
 const CURVE_KEYS: readonly (keyof ExportCurves)[] = [
   'masterShadow', 'masterMidtone', 'masterHighlight',
@@ -197,6 +208,7 @@ interface MediaSegment {
   timelineStart: number;
   duration: number;
   role: 'primary-video' | 'video-clip' | 'audio-clip';
+  keyframes?: ExportKeyframe[];
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -596,6 +608,33 @@ function parseAudio(value: unknown): ExportAudio {
   };
 }
 
+function parseKeyframe(value: unknown, label: string): ExportKeyframe {
+  const source = readRecord(value, label);
+  const property = readEnum(source.property, KEYFRAME_PROPERTIES, `${label} property`);
+  const keyframe: ExportKeyframe = {
+    time: readNumber(source, 'time', `${label} time`, 0, 86400),
+    property,
+    value: readNumber(source, 'value', `${label} value`, -10000, 10000),
+    easing: readEnum(source.easing, EASES, `${label} easing`),
+  };
+  if (property === 'effect') {
+    const param = source.effectParam;
+    if (typeof param !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/.test(param)) {
+      throw new ExportPlanError(`${label} needs an effect parameter name.`);
+    }
+    keyframe.effectParam = param;
+  }
+  return keyframe;
+}
+
+function parseKeyframes(value: unknown, label: string): ExportKeyframe[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new ExportPlanError(`${label} are invalid.`);
+  if (value.length > 128) throw new ExportPlanError(`${label} supports up to 128 keyframes.`);
+  if (value.length === 0) return undefined;
+  return value.map((entry, index) => parseKeyframe(entry, `${label} ${index + 1}`));
+}
+
 function parseClip(value: unknown, index: number): ExportSourceClip {
   const source = readRecord(value, `Timeline clip ${index + 1}`);
   const inPoint = readNumber(source, 'inPoint', `Clip ${index + 1} in point`, 0, 86400);
@@ -603,13 +642,16 @@ function parseClip(value: unknown, index: number): ExportSourceClip {
   if (outPoint <= inPoint + 0.04) {
     throw new ExportPlanError(`Timeline clip ${index + 1} is empty. Each clip needs an In and Out.`);
   }
-  return {
+  const clip: ExportSourceClip = {
     sourcePath: assertSafePath(String(source.sourcePath ?? ''), `Timeline clip ${index + 1}`),
     trackType: readEnum(source.trackType, ['video', 'audio'] as const, `Clip ${index + 1} track type`),
     startTime: readNumber(source, 'startTime', `Clip ${index + 1} start`, 0, 86400),
     inPoint,
     outPoint,
   };
+  const keyframes = parseKeyframes(source.keyframes, `Clip ${index + 1} keyframes`);
+  if (keyframes) clip.keyframes = keyframes;
+  return clip;
 }
 
 /** Validate a renderer payload before it reaches ffmpeg. */
@@ -643,6 +685,7 @@ export function parseExportJob(input: unknown): ExportJob {
     autoReframe: readEnum(source.autoReframe, ASPECTS, 'Auto reframe'),
     transition: readEnum(source.transition, TRANSITIONS, 'Transition'),
     clips: clipsIn.map((clip, index) => parseClip(clip, index)),
+    keyframes: parseKeyframes(source.keyframes, 'Program keyframes'),
     options: {
       resolution: readEnum(optionsIn.resolution, RESOLUTIONS, 'Resolution'),
       frameRate,
@@ -820,24 +863,38 @@ function pixelFormat(format: ExportFormat): string {
   return format === 'mov' ? 'yuv422p10le' : 'yuv420p';
 }
 
-function videoBody(
+function pictureOf(
   job: ExportJob,
   size: { width: number; height: number },
-  rate: number
-): string {
+  rate: number,
+  keyframes: ExportKeyframe[] | undefined,
+  duration: number,
+): { chain: string; audioFilters: string[]; warnings: string[] } {
+  const motion = motionGraph({
+    keyframes,
+    width: size.width,
+    height: size.height,
+    fps: job.options.frameRate,
+    duration,
+  });
   const pts = near(rate, 1, 0.001) ? 'setpts=PTS-STARTPTS' : `setpts=(PTS-STARTPTS)/${formatRate(rate)}`;
-  return [
-    pts,
-    `fps=${job.options.frameRate}`,
-    scaleFilter(size.width, size.height, job.autoReframe),
-    ...lumetriFilters(job.lumetri),
-    `format=${pixelFormat(job.options.format)}`,
-  ].join(',');
+  return {
+    chain: [
+      pts,
+      `fps=${job.options.frameRate}`,
+      scaleFilter(size.width, size.height, job.autoReframe),
+      ...motion.videoFilters,
+      ...lumetriFilters(job.lumetri),
+      `format=${pixelFormat(job.options.format)}`,
+    ].join(','),
+    audioFilters: motion.audioFilters,
+    warnings: motion.warnings,
+  };
 }
 
-function audioBody(job: ExportJob, rate: number): string {
+function audioBody(job: ExportJob, rate: number, extra: readonly string[] = []): string {
   const process = audioProcessFilters(job.audio, job.volume, rate);
-  return ['asetpts=PTS-STARTPTS', ...process].join(',');
+  return ['asetpts=PTS-STARTPTS', ...process, ...extra].join(',');
 }
 
 function codecArgs(job: ExportJob, withAudio: boolean): string[] {
@@ -913,16 +970,23 @@ function buildSingle(
   warnings: string[]
 ): ExportPlan {
   const edge = edgeTransition(job.transition, duration, size.width, size.height, job.options.frameRate);
-  const picture = [videoBody(job, size, job.playbackRate), edge].filter(Boolean).join(',');
+  const picture = pictureOf(
+    job,
+    size,
+    job.playbackRate,
+    prepareKeyframes(job.keyframes, job.trimStart, job.playbackRate),
+    duration,
+  );
+  const chain = [picture.chain, edge].filter(Boolean).join(',');
   const args = [
     '-hide_banner', '-y', '-nostdin', '-progress', 'pipe:1', '-nostats',
     '-ss', sec(job.trimStart), '-to', sec(job.trimEnd), '-i', job.sourcePath,
   ];
   if (withAudio) {
-    args.push('-filter_complex', `[0:v]${picture}[v];[0:a]${audioBody(job, job.playbackRate)}[a]`);
+    args.push('-filter_complex', `[0:v]${chain}[v];[0:a]${audioBody(job, job.playbackRate, picture.audioFilters)}[a]`);
     args.push('-map', '[v]', '-map', '[a]');
   } else {
-    args.push('-vf', picture, '-map', '0:v:0', '-an');
+    args.push('-vf', chain, '-map', '0:v:0', '-an');
   }
   args.push(...codecArgs(job, withAudio), '-f', job.options.format, outputPath);
   return {
@@ -936,7 +1000,7 @@ function buildSingle(
     videoCodec: videoCodecName(job.options.format),
     audioCodec: withAudio ? audioCodecName(job.options.format) : null,
     canRetryWithoutAudio: withAudio,
-    warnings,
+    warnings: [...warnings, ...picture.warnings],
   };
 }
 
@@ -992,14 +1056,16 @@ function buildSequence(
     args.push('-ss', sec(seg.ss), '-to', sec(seg.to), '-i', seg.sourcePath);
   }
   const chains: string[] = [];
-  const picture = videoBody(job, size, job.playbackRate);
+  const motionWarnings: string[] = [];
   videos.forEach((seg, index) => {
-    chains.push(`[${index}:v]${picture}[v${index}]`);
+    const picture = pictureOf(job, size, job.playbackRate, seg.keyframes, seg.duration);
+    motionWarnings.push(...picture.warnings);
+    chains.push(`[${index}:v]${picture.chain}[v${index}]`);
     if (!withAudio) return;
     if (seg.role === 'primary-video' && !primaryAudio) {
       chains.push(`anullsrc=channel_layout=stereo:sample_rate=48000,atrim=end=${sec(seg.duration)}[a${index}]`);
     } else {
-      chains.push(`[${index}:a]${audioBody(job, job.playbackRate)}[a${index}]`);
+      chains.push(`[${index}:a]${audioBody(job, job.playbackRate, picture.audioFilters)}[a${index}]`);
     }
   });
 
@@ -1047,9 +1113,17 @@ function buildSequence(
   }
 
   if (withAudio && externalAudio.length > 0) {
-    externalAudio.forEach((_clip, offset) => {
+    externalAudio.forEach((clip, offset) => {
       const index = videos.length + offset;
-      chains.push(`[${index}:a]${audioBody(job, job.playbackRate)}[mx${offset}]`);
+      const motion = motionGraph({
+        keyframes: clip.keyframes,
+        width: size.width,
+        height: size.height,
+        fps: job.options.frameRate,
+        duration: clip.duration,
+      });
+      motionWarnings.push(...motion.warnings);
+      chains.push(`[${index}:a]${audioBody(job, job.playbackRate, motion.audioFilters)}[mx${offset}]`);
       const mixed = `am${offset}`;
       if (job.audio.autoDuck) {
         chains.push(`[mx${offset}][${audioLabel}]sidechaincompress=threshold=0.05:ratio=8:attack=20:release=250[duck${offset}]`);
@@ -1078,7 +1152,7 @@ function buildSequence(
     videoCodec: videoCodecName(job.options.format),
     audioCodec: withAudio ? audioCodecName(job.options.format) : null,
     canRetryWithoutAudio: withAudio && externalAudio.length === 0,
-    warnings,
+    warnings: [...warnings, ...motionWarnings],
   };
 }
 
@@ -1105,6 +1179,7 @@ export function buildExportPlan(job: ExportJob, options: BuildOptions = {}): Exp
       timelineStart: clip.startTime,
       duration: segmentDuration(clip.inPoint, clip.outPoint, rate),
       role: 'video-clip' as const,
+      keyframes: prepareKeyframes(clip.keyframes, 0, rate),
     }))
     .sort((a, b) => a.timelineStart - b.timelineStart);
 
@@ -1119,6 +1194,7 @@ export function buildExportPlan(job: ExportJob, options: BuildOptions = {}): Exp
           timelineStart: clip.startTime,
           duration: segmentDuration(clip.inPoint, clip.outPoint, rate),
           role: 'audio-clip' as const,
+          keyframes: prepareKeyframes(clip.keyframes, 0, rate),
         }));
 
   const videos: MediaSegment[] = [];
@@ -1130,6 +1206,7 @@ export function buildExportPlan(job: ExportJob, options: BuildOptions = {}): Exp
       timelineStart: 0,
       duration: primaryDuration,
       role: 'primary-video',
+      keyframes: prepareKeyframes(job.keyframes, job.trimStart, rate),
     });
   }
   videos.push(...videoClips);

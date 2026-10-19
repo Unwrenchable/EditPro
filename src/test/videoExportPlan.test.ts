@@ -13,6 +13,7 @@ import {
   fileUrlToPath,
   isFilesystemPath,
   isMissingAudioError,
+  keyframeExpression,
   lumetriFilters,
   outputSize,
   parseExportJob,
@@ -279,6 +280,63 @@ describe('buildExportPlan', () => {
     expect(mov.args).toContain('pcm_s16le');
     expect(mov.args).toContain('yuv422p10le');
     expect(mov.outputPath.endsWith('.mov')).toBe(true);
+  });
+
+  it('bakes keyframed scale, rotation, opacity, and effect parameters into the filter graph', () => {
+    const neutral = buildExportPlan(job({
+      keyframes: [{ time: 0, property: 'opacity', value: 1, easing: 'linear' }],
+    }));
+    const plain = buildExportPlan(job());
+    expect(neutral.args[neutral.args.indexOf('-filter_complex') + 1]).toBe(
+      plain.args[plain.args.indexOf('-filter_complex') + 1],
+    );
+
+    const plan = buildExportPlan(job({
+      trimStart: 0,
+      trimEnd: 2,
+      keyframes: [
+        { time: 0, property: 'scale', value: 1, easing: 'linear' },
+        { time: 2, property: 'scale', value: 2, easing: 'easeIn' },
+        { time: 0, property: 'rotation', value: 0, easing: 'linear' },
+        { time: 2, property: 'rotation', value: 90, easing: 'linear' },
+        { time: 0, property: 'opacity', value: 1, easing: 'linear' },
+        { time: 2, property: 'opacity', value: 0, easing: 'linear' },
+        { time: 0, property: 'effect', value: 1, easing: 'linear', effectParam: 'saturation' },
+        { time: 2, property: 'effect', value: 2, easing: 'linear', effectParam: 'saturation' },
+        { time: 0, property: 'effect', value: 0, easing: 'linear', effectParam: 'glow' },
+      ],
+    }));
+    const graph = plan.args[plan.args.indexOf('-filter_complex') + 1];
+    expect(graph).toContain('zoompan=z=');
+    expect(graph).toContain('rotate=a=');
+    expect(graph).toContain('geq=lum=');
+    expect(graph).toContain('hue=s=');
+    expect(graph).not.toContain('eval=frame');
+    expect(plan.warnings.some((warning) => warning.includes('glow'))).toBe(true);
+    const eased = keyframeExpression([
+      { time: 0, property: 'opacity', value: 0, easing: 'linear' },
+      { time: 2, property: 'opacity', value: 100, easing: 'easeIn' },
+    ], 0, 'time');
+    expect(eased).toContain('(time-0.000)/2.000');
+    expect(eased.split('(time-0.000)/2.000').length).toBe(3);
+
+    const parsed = parseExportJob({
+      ...job({
+        trimStart: 0,
+        trimEnd: 2,
+        clips: [{
+          sourcePath: '/videos/broll.mp4',
+          trackType: 'video',
+          startTime: 0,
+          inPoint: 0,
+          outPoint: 2,
+          keyframes: [{ time: 0.5, property: 'positionX', value: 0.1, easing: 'easeOut' }],
+        }],
+      }),
+    });
+    expect(parsed.clips[0]?.keyframes?.[0]).toMatchObject({ property: 'positionX', value: 0.1, easing: 'easeOut' });
+    const sequence = buildExportPlan(parsed);
+    expect(sequence.args[sequence.args.indexOf('-filter_complex') + 1]).toContain('zoompan=z=');
   });
 
   it('rejects an empty trim, a muted timeline, and overwriting the source', () => {

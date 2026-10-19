@@ -9,7 +9,37 @@ import VideoExportModal from './VideoExportModal';
 import { buildLumetriFilter, getAutoReframeOverlay } from '../../utils/videoUtils';
 import { formatFileSize } from '../../utils/imageFilters';
 import { resolveSourcePath } from '../../utils/video/sourcePath';
-import type { MagicMoviePlan, VideoExportOptions } from '../../types';
+import { sampleEffect, sampleTransform } from '../../utils/video/keyframes';
+import { clipAtPlayhead, editPoints, neighborEdit } from '../../utils/video/timelineEdit';
+import { matchNleShortcut, nleActionKind } from '../../utils/video/nleShortcuts';
+import type { MagicMoviePlan, VideoEditorState, VideoExportOptions } from '../../types';
+
+function previewStyle(state: VideoEditorState, baseFilter: string): React.CSSProperties {
+  const clip = clipAtPlayhead(state.clips, state.tracks, state.currentTime);
+  const useClip = Boolean(clip?.keyframes && clip.keyframes.length > 0);
+  const keys = useClip ? clip?.keyframes : state.programKeyframes;
+  const time = useClip && clip ? state.currentTime - clip.startTime : state.currentTime;
+  const motion = sampleTransform(keys, time);
+  const brightness = sampleEffect(keys, 'brightness', time);
+  const contrast = sampleEffect(keys, 'contrast', time);
+  const saturation = sampleEffect(keys, 'saturation', time);
+  const blur = sampleEffect(keys, 'blur', time);
+  const extras = [
+    brightness !== null ? `brightness(${(1 + brightness).toFixed(3)})` : '',
+    contrast !== null ? `contrast(${contrast.toFixed(3)})` : '',
+    saturation !== null ? `saturate(${saturation.toFixed(3)})` : '',
+    blur !== null ? `blur(${Math.max(0, blur).toFixed(2)}px)` : '',
+  ].filter((part) => part.length > 0);
+  const moved = motion.positionX !== 0 || motion.positionY !== 0 || motion.scale !== 1 || motion.rotation !== 0;
+  return {
+    filter: [baseFilter, ...extras].filter(Boolean).join(' '),
+    opacity: motion.opacity,
+    transform: moved
+      ? `translate(${motion.positionX * 100}%, ${motion.positionY * 100}%) rotate(${motion.rotation}deg) scale(${motion.scale})`
+      : undefined,
+    transformOrigin: 'center center',
+  };
+}
 
 // ── VideoEditor ───────────────────────────────────────────────────────────────
 
@@ -108,47 +138,50 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
     }
   }, [editor, state.duration]);
 
-  // ── Keyboard shortcuts ─────────────────────────────────────────────────────
+  // ── Keyboard shortcuts (transport). Timeline tools are handled in ProTimeline.
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!state.videoUrl) return;
-      // Don't fire when typing in an input or select, or when a command shortcut is pressed.
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if ((e.target as HTMLElement).tagName === 'INPUT' ||
-          (e.target as HTMLElement).tagName === 'TEXTAREA' ||
-          (e.target as HTMLElement).tagName === 'SELECT') return;
-
-      switch (e.key) {
-        case ' ':
-          e.preventDefault();
-          editor.togglePlay(state.isPlaying, state.trimStart, state.trimEnd);
-          break;
-        case 'k': case 'K':
-          editor.pause();
-          break;
-        case 'l': case 'L':
-          if (!state.isPlaying) editor.play(state.trimStart, state.trimEnd);
-          break;
-        case 'j': case 'J':
-          editor.skip(-5);
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          editor.stepFrame(-1);
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          editor.stepFrame(1);
-          break;
-        case 'i': case 'I':
-          editor.setInPoint(state.currentTime, state.trimEnd);
-          break;
-        case 'o': case 'O':
-          editor.setOutPoint(state.currentTime, state.trimStart, state.duration);
-          break;
-        case 'm': case 'M':
-          editor.addMarker(state.currentTime);
-          break;
+    const handler = (event: KeyboardEvent) => {
+      if (!state.videoUrl || document.querySelector('.export-modal')) return;
+      const action = matchNleShortcut({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        target: event.target,
+      });
+      if (!action || nleActionKind(action) !== 'transport') return;
+      event.preventDefault();
+      if (action.type === 'shuttle') {
+        if (action.direction === 'stop') editor.shuttleStop();
+        else if (action.direction === 'forward') editor.shuttleForward(action.slow);
+        else editor.shuttleReverse(action.slow);
+      } else if (action.type === 'playToggle') {
+        editor.togglePlay(state.isPlaying, state.trimStart, state.trimEnd);
+      } else if (action.type === 'step') {
+        const direction = action.frames < 0 ? -1 : 1;
+        for (let index = 0; index < Math.abs(action.frames); index += 1) editor.stepFrame(direction);
+      } else if (action.type === 'setIn') {
+        editor.setInPoint(state.currentTime, state.trimEnd);
+      } else if (action.type === 'setOut') {
+        editor.setOutPoint(state.currentTime, state.trimStart, state.duration);
+      } else if (action.type === 'clearIn') {
+        editor.setTrimStart(0, state.trimEnd);
+      } else if (action.type === 'clearOut') {
+        editor.setTrimEnd(state.duration, state.trimStart, state.duration);
+      } else if (action.type === 'clearInOut') {
+        editor.clearInOut(state.duration);
+      } else if (action.type === 'marker') {
+        editor.addMarker(state.currentTime);
+      } else if (action.type === 'markClip') {
+        editor.markClipAt(state.currentTime);
+      } else if (action.type === 'trimToPlayhead') {
+        editor.rippleToPlayhead(action.edge, state.currentTime);
+      } else if (action.type === 'goto') {
+        editor.seek(action.edge === 'start' ? 0 : state.duration);
+      } else if (action.type === 'gotoEdit') {
+        const next = neighborEdit(editPoints(state.clips, state.markers, state.trimStart, state.trimEnd), state.currentTime, action.direction);
+        if (next !== null) editor.seek(next);
       }
     };
     window.addEventListener('keydown', handler);
@@ -179,7 +212,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
                 ref={videoRef}
                 src={state.videoUrl}
                 className="preview-video"
-                style={{ filter: videoFilter }}
+                style={previewStyle(state, videoFilter)}
                 onLoadedMetadata={editor.onLoadedMetadata}
                 onTimeUpdate={editor.onTimeUpdate}
                 onEnded={handleEnded}
@@ -238,11 +271,15 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           tracks={state.tracks}
           clips={state.clips}
           zoom={state.timelineZoom}
+          snapping={state.snapping}
+          shuttleRate={state.shuttleRate}
+          programKeyframes={state.programKeyframes}
           hasVideo={!!state.videoUrl}
           onSeek={handleSeek}
           onTrimStartChange={handleTrimStart}
           onTrimEndChange={handleTrimEnd}
           onZoomChange={handleZoom}
+          onToggleSnapping={() => editor.setSnapping(!state.snapping)}
           onAddMarker={handleAddMarker}
           onRemoveMarker={handleRemoveMarker}
           onAddTrack={handleAddTrack}
@@ -250,7 +287,28 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           onSetTrackLocked={handleSetTrackLocked}
           onRemoveTrack={handleRemoveTrack}
           onDeleteClip={handleDeleteClip}
+          onRippleDelete={(id) => editor.rippleDeleteClip(id)}
           onSplitClip={handleSplitClip}
+          onRazorAt={(time) => editor.razorAt(time)}
+          onMoveClip={(id, trackId, start, key) => editor.moveClip(id, trackId, start, key)}
+          onTrimClip={(id, edge, time, key) => editor.trimClip(id, edge, time, key)}
+          onRippleTrim={(id, edge, value, key) => editor.rippleTrimClip(id, edge, value, key)}
+          onRollClip={(id, edge, time, key) => editor.rollClip(id, edge, time, key)}
+          onSlipClip={(id, inPoint, key) => editor.slipClip(id, inPoint, key)}
+          onSlideClip={(id, start, key) => editor.slideClip(id, start, key)}
+          onToggleLink={(id) => editor.toggleClipLink(id, state.currentTime)}
+          onAddKeyframe={(clipId, keyframe) => {
+            if (clipId) editor.addClipKeyframe(clipId, keyframe);
+            else editor.addProgramKeyframe(keyframe);
+          }}
+          onUpdateKeyframe={(clipId, keyframeId, patch, key) => {
+            if (clipId) editor.updateClipKeyframe(clipId, keyframeId, patch, key);
+            else editor.updateProgramKeyframe(keyframeId, patch, key);
+          }}
+          onRemoveKeyframe={(clipId, keyframeId) => {
+            if (clipId) editor.removeClipKeyframe(clipId, keyframeId);
+            else editor.removeProgramKeyframe(keyframeId);
+          }}
         />
 
         {state.file && (
@@ -310,6 +368,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           transition={state.transition}
           clips={state.clips}
           tracks={state.tracks}
+          programKeyframes={state.programKeyframes}
           initialPlatform={exportSeed.platform}
           initialQuality={exportSeed.quality}
           onTransitionChange={editor.setTransition}
