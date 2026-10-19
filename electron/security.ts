@@ -288,6 +288,33 @@ export function buildContentSecurityPolicy(
   return directives.join('; ');
 }
 
+/**
+ * CSP for the installable web build. The desktop app keeps the strict policy
+ * from {@link buildContentSecurityPolicy} on the session header. This meta
+ * policy is what a static host serves. It allows the wasm workers ffmpeg.wasm
+ * and transformers.js need, and same-origin plus the model/core CDNs.
+ */
+export function buildWebContentSecurityPolicy(): string {
+  const directives = [
+    "default-src 'self'",
+    "script-src 'self' blob: 'wasm-unsafe-eval'",
+    "script-src-attr 'none'",
+    "style-src 'self'",
+    "style-src-attr 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "media-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' blob: data: https://cdn.jsdelivr.net https://unpkg.com https://huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co https://cas-bridge.xethub.hf.co https://api.github.com",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-src 'none'",
+    "worker-src 'self' blob:",
+    "child-src 'self' blob:",
+  ];
+  return directives.join('; ');
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',

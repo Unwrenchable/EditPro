@@ -11,6 +11,7 @@ import { placeTransition } from '../../utils/video/creative';
 import ProgramOverlay from './ProgramOverlay';
 import { useWaveformPeaks } from '../../hooks/useWaveformPeaks';
 import { formatFileSize } from '../../utils/imageFilters';
+import { getPlatform } from '../../platform';
 import { resolveSourcePath } from '../../utils/video/sourcePath';
 import { sampleEffect, sampleTransform } from '../../utils/video/keyframes';
 import { clipAtPlayhead, editPoints, neighborEdit } from '../../utils/video/timelineEdit';
@@ -87,7 +88,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   // lifetime of this component instance (key-based remount in App).
   useEffect(() => {
     if (initialFile) {
-      loadVideo(initialFile, resolveSourcePath(initialFile, window.editpro));
+      loadVideo(initialFile, resolveSourcePath(initialFile, getPlatform()));
     }
   }, [initialFile, loadVideo]);
 
@@ -120,7 +121,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   usePreviewSrc(videoRef, playbackUrl, state.mediaPath);
   const showingProxy = Boolean(proxy.useProxy && proxy.proxyUrl && playbackUrl === proxy.proxyUrl);
   const stageScale = monitorScale({ showingProxy, resolution: proxy.resolution });
-  const proxyAvailable = Boolean(state.mediaPath && window.editpro?.startProxy);
+  const proxyAvailable = Boolean(state.mediaPath && getPlatform().capabilities.nativeProxy);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -132,7 +133,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   const handleOpenVideo = useCallback(() => fileInputRef.current?.click(), []);
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) editor.loadVideo(file, resolveSourcePath(file, window.editpro));
+    if (file) editor.loadVideo(file, resolveSourcePath(file, getPlatform()));
   };
 
   // ── Stable transport callbacks (created in component, not hook) ────────────
@@ -243,7 +244,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
         )}
         {!state.videoUrl ? (
           <VideoDropZone
-            onFileSelected={(file) => editor.loadVideo(file, resolveSourcePath(file, window.editpro))}
+            onFileSelected={(file) => editor.loadVideo(file, resolveSourcePath(file, getPlatform()))}
             videoUrl={state.videoUrl}
           />
         ) : (
@@ -418,6 +419,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
         audio={state.audio}
         autoReframe={state.autoReframe}
         videoUrl={state.videoUrl}
+        mediaFile={state.file}
         onLumetriBasicChange={editor.updateLumetriBasic}
         onCurvesChange={editor.updateLumetriCurves}
         onColorWheelChange={editor.updateColorWheel}

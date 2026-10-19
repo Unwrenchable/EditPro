@@ -2,6 +2,7 @@ import type { EditProBridge } from '../types/electron';
 import { ensureProjectExtension, fileNameFromPath } from '../utils/projectFile';
 import { addRecentFile, sanitizeRecentList, type RecentFileEntry } from '../utils/recentFiles';
 import { fileFromDataUrl, fileMediaPath } from '../utils/mediaFiles';
+import { getPlatform } from '../platform';
 import {
   beginSession,
   discardSessionAutosave,
@@ -297,7 +298,7 @@ export function createElectronProjectIO(bridge: EditProBridge): ProjectIO {
 }
 
 export function createProjectIO(): ProjectIO {
-  if (typeof window !== 'undefined' && window.editpro?.openProject) {
+  if (typeof window !== 'undefined' && getPlatform().kind === 'electron' && window.editpro?.openProject) {
     return createElectronProjectIO(window.editpro);
   }
   return createBrowserProjectIO(window.localStorage);

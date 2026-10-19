@@ -96,7 +96,22 @@ npm run dist:linux       # Package for Linux (.AppImage + .deb)
 npm run generate:icons   # Rebuild app icons from build-resources/icon.svg
 npm test                 # Run Vitest test suite
 npm run lint             # ESLint
+npm run build:web        # Browser bundle (WebCodecs, ffmpeg.wasm, transformers.js)
+npm run fetch:ffmpeg     # Optional: download ffmpeg.wasm core into public/ffmpeg
 ```
+
+### Browser, phone, and desktop
+
+The React UI talks to a platform bridge (`src/platform`). In Electron that bridge is the existing preload IPC. In a browser tab, and later in the mobile shell, it is an in-process implementation:
+
+| Need | Desktop | Browser |
+|------|---------|---------|
+| Export | Bundled ffmpeg | ffmpeg.wasm when `/ffmpeg` or jsDelivr can load the core, then WebCodecs, then MediaRecorder. The dialog says which engine ran. |
+| Proxies and GPU decode | Desktop ffmpeg | The original file plays. The playback bar says proxies are a desktop feature. |
+| Speech transcription | No Whisper binary in this build | transformers.js (Whisper-tiny) on the device, after the weights download once. Audio is not uploaded. |
+| Updates | electron-updater on signed installs | Refresh the page, or download a desktop installer. |
+
+`npm run dev` is the browser session. `npm run dev:electron` is the desktop app. `npm run build` stays the desktop renderer (wasm engines are stubbed so the packaged app does not carry them). `npm run build:web` is the static bundle those engines are allowed to load in.
 
 ### Project structure
 
@@ -115,7 +130,8 @@ EditPro/
 │   ├── hooks/
 │   │   ├── usePhotoEditor.ts
 │   │   ├── useVideoEditor.ts
-│   │   └── useNativeFiles.ts   Electron/browser file I/O bridge
+│   │   └── useNativeFiles.ts   Platform file open/save
+│   ├── platform/               Desktop IPC and browser/mobile host
 │   ├── types/
 │   │   ├── index.ts            PhotoAdjustments, VideoEditorState, etc.
 │   │   └── electron.d.ts       window.editpro IPC bridge types

@@ -1,13 +1,12 @@
 /** Electron's File objects carry the native path. Browsers do not. */
+import { getPlatform } from '../platform';
+
 export function fileMediaPath(file: File): string | null {
-  const bridge = typeof window !== 'undefined' ? window.editpro : undefined;
-  if (bridge?.getPathForFile) {
-    try {
-      const fromBridge = bridge.getPathForFile(file);
-      if (typeof fromBridge === 'string' && fromBridge.length > 0) return fromBridge;
-    } catch {
-      // Fall through to the legacy path property.
-    }
+  try {
+    const fromBridge = getPlatform().getPathForFile(file);
+    if (typeof fromBridge === 'string' && fromBridge.length > 0) return fromBridge;
+  } catch {
+    // Fall through to the legacy path property.
   }
   const path = (file as File & { path?: unknown }).path;
   return typeof path === 'string' && path.length > 0 ? path : null;
