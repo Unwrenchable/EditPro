@@ -141,6 +141,8 @@ const App: React.FC = () => {
   const [mode, setMode] = useState<EditorMode>('photo');
   const [showExport, setShowExport] = useState(false);
   const [photoLoaded, setPhotoLoaded] = useState(false);
+  const [videoLoaded, setVideoLoaded] = useState(false);
+  const [videoExportRequest, setVideoExportRequest] = useState(0);
   const [magicResult, setMagicResult] = useState<MagicMovieResult | null>(null);
   // Bump this key to force VideoEditor to remount when a new magic plan is applied
   const [videoKey, setVideoKey] = useState(0);
@@ -149,6 +151,7 @@ const App: React.FC = () => {
     (m: EditorMode) => {
       setMode(m);
       setShowExport(false);
+      if (m !== 'video') setVideoLoaded(false);
     },
     []
   );
@@ -164,8 +167,11 @@ const App: React.FC = () => {
       <TopBar
         mode={mode}
         onModeChange={handleModeChange}
-        onExport={() => setShowExport(true)}
-        canExport={mode === 'photo' && photoLoaded}
+        onExport={() => {
+          if (mode === 'video') setVideoExportRequest((n) => n + 1);
+          else setShowExport(true);
+        }}
+        canExport={(mode === 'photo' && photoLoaded) || (mode === 'video' && videoLoaded)}
       />
       <main className="app-main">
         {mode === 'photo' ? (
@@ -181,6 +187,8 @@ const App: React.FC = () => {
             key={videoKey}
             initialMagicPlan={magicResult?.plan}
             initialFile={magicResult?.file}
+            exportRequestId={videoExportRequest}
+            onLoadedChange={setVideoLoaded}
           />
         )}
       </main>

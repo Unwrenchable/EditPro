@@ -11,6 +11,7 @@ import type {
   TimelineClip,
   TrackType,
   AutoReframeAspect,
+  VideoTransition,
 } from '../types';
 import { clamp, DEFAULT_LUMETRI, DEFAULT_AUDIO } from '../utils/videoUtils';
 
@@ -37,6 +38,8 @@ const initialState: VideoEditorState = {
   timelineZoom: 1,
   tracks: DEFAULT_TRACKS,
   clips: [],
+  transition: 'cut',
+  sourcePath: null,
 };
 
 /**
@@ -50,9 +53,9 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
 
   // ── File ──────────────────────────────────────────────────────────────────
 
-  const loadVideo = useCallback((file: File) => {
+  const loadVideo = useCallback((file: File, sourcePath: string | null = null) => {
     const url = URL.createObjectURL(file);
-    setState({ ...initialState, file, videoUrl: url, trimEnd: 0 });
+    setState({ ...initialState, file, videoUrl: url, trimEnd: 0, sourcePath });
   }, []);
 
   // ── Playback ──────────────────────────────────────────────────────────────
@@ -285,6 +288,10 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     setState((prev) => ({ ...prev, autoReframe: aspect }));
   }, []);
 
+  const setTransition = useCallback((transition: VideoTransition) => {
+    setState((prev) => ({ ...prev, transition }));
+  }, []);
+
   // ── Timeline zoom ─────────────────────────────────────────────────────────
 
   const setTimelineZoom = useCallback((zoom: number) => {
@@ -443,6 +450,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     removeMarker,
     // Auto Reframe
     setAutoReframe,
+    setTransition,
     // Timeline zoom
     setTimelineZoom,
     // Multi-track timeline

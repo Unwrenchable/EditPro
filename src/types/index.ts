@@ -146,6 +146,17 @@ export interface AudioClip {
 
 export type AutoReframeAspect = '16:9' | '9:16' | '1:1' | '4:5' | '4:3' | 'original';
 
+/** Transition rendered at the program In/Out points (and between timeline clips). */
+export type VideoTransition =
+  | 'cut'
+  | 'fade'
+  | 'dissolve'
+  | 'crossfade'
+  | 'wipe'
+  | 'slide'
+  | 'zoom'
+  | 'dip-to-black';
+
 export interface VideoExportOptions {
   platform: 'youtube' | 'tiktok' | 'vimeo' | 'twitter' | 'custom';
   resolution: '4K' | '1080p' | '720p' | '480p';
@@ -241,6 +252,10 @@ export interface VideoEditorState {
   tracks: TimelineTrack[];
   /** Multi-track timeline clips */
   clips: TimelineClip[];
+  /** Transition rendered on export at the In/Out points. */
+  transition: VideoTransition;
+  /** Absolute path when the file was opened from disk in Electron. */
+  sourcePath: string | null;
 }
 
 export interface ExportOptions {
