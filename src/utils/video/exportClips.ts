@@ -1,6 +1,7 @@
 import { fileUrlToPath, isFilesystemPath, type ExportSourceClip } from './exportPlan';
 
 interface ClipLike {
+  id?: string;
   src: string;
   trackId: string;
   startTime: number;
@@ -32,13 +33,18 @@ export function timelineClipsForExport(
       skippedUnreadable += 1;
       continue;
     }
-    exported.push({
+    const exportedClip: ExportSourceClip = {
       sourcePath: fileUrlToPath(clip.src),
       trackType: track.type,
       startTime: clip.startTime,
       inPoint: clip.inPoint,
       outPoint: clip.outPoint,
-    });
+    };
+    if (clip.id) {
+      exportedClip.clipId = clip.id;
+      exportedClip.trackId = clip.trackId;
+    }
+    exported.push(exportedClip);
   }
   return { clips: exported, skippedUnreadable };
 }

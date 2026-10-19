@@ -1,6 +1,7 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { formatTime } from '../../utils/videoUtils';
 import type { TimelineMarker, TimelineTrack, TimelineClip, TrackType } from '../../types';
+import type { ClipTransitionKind } from '../../utils/video/creative';
 import TimelineTrackComponent, { TRACK_HEADER_W, TRACK_H_VIDEO, TRACK_H_AUDIO } from './TimelineTrack';
 import TimelineRuler from './TimelineRuler';
 
@@ -34,12 +35,15 @@ interface ProTimelineProps {
   onRemoveTrack: (trackId: string) => void;
   onDeleteClip: (clipId: string) => void;
   onSplitClip: (clipId: string, atTime: number) => void;
+  peaks?: readonly number[];
+  mediaDuration?: number;
+  onDropTransition?: (outgoingClipId: string, incomingClipId: string, kind: ClipTransitionKind) => void;
 }
 
 const ProTimeline: React.FC<ProTimelineProps> = ({
   duration, currentTime, trimStart, trimEnd, markers, tracks, clips, zoom, hasVideo,
   onSeek, onTrimStartChange, onTrimEndChange, onZoomChange, onAddMarker, onRemoveMarker,
-  onAddTrack, onSetTrackMuted, onSetTrackLocked, onRemoveTrack, onDeleteClip, onSplitClip,
+  onAddTrack, onSetTrackMuted, onSetTrackLocked, onRemoveTrack,   onDeleteClip, onSplitClip, peaks = [], mediaDuration = 0, onDropTransition,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -198,6 +202,9 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
               onToggleMute={onSetTrackMuted}
               onToggleLock={onSetTrackLocked}
               onRemoveTrack={onRemoveTrack}
+              peaks={track.type === 'audio' ? peaks : []}
+              mediaDuration={mediaDuration}
+              onDropTransition={onDropTransition}
             />
           ))}
 

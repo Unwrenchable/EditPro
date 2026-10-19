@@ -85,6 +85,9 @@ contextBridge.exposeInMainWorld('editpro', {
   startVideoExport: (request: unknown): Promise<{ status: 'done' | 'cancelled' | 'error'; outputPath: string; message?: string }> =>
     ipcRenderer.invoke('export:start', request),
 
+  /** Encoder names from `ffmpeg -encoders`, including NVENC, QSV, AMF, and VideoToolbox when present. */
+  listVideoEncoders: (): Promise<string[]> => ipcRenderer.invoke('export:encoders'),
+
   /** Stop an in-progress export. */
   cancelVideoExport: (jobId: string): Promise<boolean> => ipcRenderer.invoke('export:cancel', jobId),
 

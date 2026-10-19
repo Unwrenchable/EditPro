@@ -8,6 +8,25 @@
  * only place that spawns ffmpeg.
  */
 
+import {
+  clipEnvelope,
+  drawtextFilters,
+  hasGainCurve,
+  liftGammaGainFilter,
+  lut3dFilter,
+  normalizeCreativeState,
+  normalizeLinearGain,
+  selectVideoEncoder,
+  softwareCodecName,
+  trackFader,
+  volumeFilter,
+  xfadeName,
+  encoderArgs,
+  type CreativeState,
+  type DeliveryCodec,
+  type EncoderChoice,
+} from './creative';
+
 export class ExportPlanError extends Error {
   constructor(message: string) {
     super(message);
@@ -30,7 +49,16 @@ export type VideoTransition =
 export type ExportResolution = '4K' | '1080p' | '720p' | '480p';
 export type ExportFrameRate = 24 | 30 | 60;
 export type ExportFormat = 'mp4' | 'webm' | 'mov';
-export type ExportPlatform = 'youtube' | 'tiktok' | 'vimeo' | 'twitter' | 'custom';
+export type ExportPlatform =
+  | 'youtube'
+  | 'youtube-4k'
+  | 'tiktok'
+  | 'instagram'
+  | 'vimeo'
+  | 'twitter'
+  | 'prores'
+  | 'h265'
+  | 'custom';
 
 export interface ExportCurves {
   masterShadow: number;
@@ -90,6 +118,9 @@ export interface ExportSourceClip {
   startTime: number;
   inPoint: number;
   outPoint: number;
+  /** Set when the clip came from the timeline, so fades and transitions can find it. */
+  clipId?: string;
+  trackId?: string;
 }
 
 export interface ExportOptions {
@@ -97,6 +128,14 @@ export interface ExportOptions {
   frameRate: ExportFrameRate;
   format: ExportFormat;
   quality: number;
+  /** h264 unless a preset selects H.265, ProRes, or VP9. */
+  codec?: 'h264' | 'hevc' | 'prores' | 'vp9';
+  /** Missing means the software encoder, which keeps older jobs on libx264. */
+  encoder?: EncoderChoice;
+  /** Encoders reported by `ffmpeg -encoders`. Empty selects the software fallback. */
+  availableEncoders?: readonly string[];
+  /** Host platform, used when encoder is `auto`. */
+  platform?: string;
 }
 
 export interface ExportJob {
@@ -116,6 +155,8 @@ export interface ExportJob {
   transition: VideoTransition;
   clips: ExportSourceClip[];
   options: ExportOptions;
+  /** Titles, grade, mixer, and per-clip transitions. Omitted on older jobs. */
+  creative?: CreativeState;
 }
 
 export interface ExportPlan {
@@ -141,14 +182,19 @@ export interface PlatformPreset {
   format: ExportFormat;
   /** Null keeps the timeline auto-reframe. */
   aspect: AutoReframeAspect | null;
+  codec: 'h264' | 'hevc' | 'prores' | 'vp9';
 }
 
 export const PLATFORM_PRESETS: readonly PlatformPreset[] = [
-  { id: 'youtube', label: 'YouTube 1080p', resolution: '1080p', frameRate: 30, format: 'mp4', aspect: null },
-  { id: 'tiktok', label: 'TikTok / Reels', resolution: '1080p', frameRate: 30, format: 'mp4', aspect: '9:16' },
-  { id: 'vimeo', label: 'Vimeo HD', resolution: '1080p', frameRate: 24, format: 'mp4', aspect: null },
-  { id: 'twitter', label: 'Twitter / X', resolution: '720p', frameRate: 30, format: 'mp4', aspect: null },
-  { id: 'custom', label: 'Custom', resolution: '1080p', frameRate: 30, format: 'mp4', aspect: null },
+  { id: 'youtube', label: 'YouTube 1080p', resolution: '1080p', frameRate: 30, format: 'mp4', aspect: null, codec: 'h264' },
+  { id: 'youtube-4k', label: 'YouTube 4K', resolution: '4K', frameRate: 30, format: 'mp4', aspect: '16:9', codec: 'h264' },
+  { id: 'tiktok', label: 'TikTok / Reels', resolution: '1080p', frameRate: 30, format: 'mp4', aspect: '9:16', codec: 'h264' },
+  { id: 'instagram', label: 'Instagram', resolution: '1080p', frameRate: 30, format: 'mp4', aspect: '4:5', codec: 'h264' },
+  { id: 'vimeo', label: 'Vimeo HD', resolution: '1080p', frameRate: 24, format: 'mp4', aspect: null, codec: 'h264' },
+  { id: 'twitter', label: 'Twitter / X', resolution: '720p', frameRate: 30, format: 'mp4', aspect: null, codec: 'h264' },
+  { id: 'prores', label: 'ProRes', resolution: '1080p', frameRate: 24, format: 'mov', aspect: null, codec: 'prores' },
+  { id: 'h265', label: 'H.265', resolution: '1080p', frameRate: 30, format: 'mp4', aspect: null, codec: 'hevc' },
+  { id: 'custom', label: 'Custom', resolution: '1080p', frameRate: 30, format: 'mp4', aspect: null, codec: 'h264' },
 ];
 
 export const TRANSITION_OPTIONS: readonly { id: VideoTransition; label: string }[] = [
@@ -188,6 +234,10 @@ const XFADE: Record<Exclude<VideoTransition, 'cut'>, string> = {
 export interface BuildOptions {
   /** When false, the graph is video-only. Used to retry sources that have no audio. */
   includeAudio?: boolean;
+  /** Written .cube for an imported LUT. The planner does not touch the disk. */
+  lutCubePath?: string | null;
+  /** Face used by drawtext so the encoded titles match the monitor family. */
+  fontFile?: string | null;
 }
 
 interface MediaSegment {
@@ -197,6 +247,8 @@ interface MediaSegment {
   timelineStart: number;
   duration: number;
   role: 'primary-video' | 'video-clip' | 'audio-clip';
+  clipId?: string;
+  trackId?: string;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -603,13 +655,16 @@ function parseClip(value: unknown, index: number): ExportSourceClip {
   if (outPoint <= inPoint + 0.04) {
     throw new ExportPlanError(`Timeline clip ${index + 1} is empty. Each clip needs an In and Out.`);
   }
-  return {
+  const clip: ExportSourceClip = {
     sourcePath: assertSafePath(String(source.sourcePath ?? ''), `Timeline clip ${index + 1}`),
     trackType: readEnum(source.trackType, ['video', 'audio'] as const, `Clip ${index + 1} track type`),
     startTime: readNumber(source, 'startTime', `Clip ${index + 1} start`, 0, 86400),
     inPoint,
     outPoint,
   };
+  if (typeof source.clipId === 'string' && source.clipId) clip.clipId = source.clipId;
+  if (typeof source.trackId === 'string' && source.trackId) clip.trackId = source.trackId;
+  return clip;
 }
 
 /** Validate a renderer payload before it reaches ffmpeg. */
@@ -627,6 +682,16 @@ export function parseExportJob(input: unknown): ExportJob {
   const clipsIn = source.clips ?? [];
   if (!Array.isArray(clipsIn)) throw new ExportPlanError('Timeline clips are invalid.');
   if (clipsIn.length > 24) throw new ExportPlanError('Export supports up to 24 timeline clips.');
+  const encoder = optionsIn.encoder === undefined
+    ? 'software'
+    : readEnum(optionsIn.encoder, ['auto', 'software', 'h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox', 'hevc_nvenc', 'hevc_qsv', 'hevc_amf', 'hevc_videotoolbox'] as const, 'Encoder');
+  const codec = optionsIn.codec === undefined
+    ? undefined
+    : readEnum(optionsIn.codec, ['h264', 'hevc', 'prores', 'vp9'] as const, 'Codec');
+  const availableEncoders = Array.isArray(optionsIn.availableEncoders)
+    ? optionsIn.availableEncoders.filter((item): item is string => typeof item === 'string').slice(0, 64)
+    : [];
+  const platform = typeof optionsIn.platform === 'string' ? optionsIn.platform : undefined;
   return {
     jobId,
     sourcePath: assertSafePath(String(source.sourcePath ?? ''), 'Source video'),
@@ -648,7 +713,12 @@ export function parseExportJob(input: unknown): ExportJob {
       frameRate,
       format: readEnum(optionsIn.format, FORMATS, 'Format'),
       quality: readNumber(optionsIn, 'quality', 'Quality', 1, 100),
+      encoder,
+      ...(codec ? { codec } : {}),
+      ...(availableEncoders.length > 0 ? { availableEncoders } : {}),
+      ...(platform ? { platform } : {}),
     },
+    ...(source.creative !== undefined ? { creative: normalizeCreativeState(source.creative) } : {}),
   };
 }
 
@@ -820,50 +890,104 @@ function pixelFormat(format: ExportFormat): string {
   return format === 'mov' ? 'yuv422p10le' : 'yuv420p';
 }
 
+interface PictureExtras {
+  lutCubePath?: string | null;
+  fontFile?: string | null;
+}
+
+function mixTracks(job: ExportJob): { id: string; muted: boolean }[] {
+  const ids = new Set<string>(['v1', 'a1']);
+  for (const entry of job.creative?.trackMix ?? []) ids.add(entry.trackId);
+  for (const clip of job.clips) {
+    if (clip.trackId) ids.add(clip.trackId);
+  }
+  return [...ids].map((id) => ({
+    id,
+    muted: (id === 'a1' && job.audioTrackMuted) || (id === 'v1' && job.videoTrackMuted),
+  }));
+}
+
+function deliveryCodec(job: ExportJob): DeliveryCodec {
+  if (job.options.codec) return job.options.codec;
+  if (job.options.format === 'webm') return 'vp9';
+  if (job.options.format === 'mov') return 'prores';
+  return 'h264';
+}
+
+function chosenEncoder(job: ExportJob): { codec: string; hardware: boolean; fallback: string } {
+  return selectVideoEncoder({
+    choice: job.options.encoder ?? 'software',
+    available: job.options.availableEncoders ?? [],
+    format: job.options.format,
+    codec: deliveryCodec(job),
+    platform: job.options.platform ?? 'linux',
+  });
+}
+
 function videoBody(
   job: ExportJob,
   size: { width: number; height: number },
-  rate: number
+  rate: number,
+  extras: PictureExtras = {},
 ): string {
   const pts = near(rate, 1, 0.001) ? 'setpts=PTS-STARTPTS' : `setpts=(PTS-STARTPTS)/${formatRate(rate)}`;
+  const creativeFilters: string[] = [];
+  if (job.creative) {
+    const grade = liftGammaGainFilter(job.creative.liftGammaGain);
+    if (grade) creativeFilters.push(grade);
+    if (job.creative.lut && extras.lutCubePath) creativeFilters.push(lut3dFilter(extras.lutCubePath));
+    for (const title of job.creative.titles) {
+      creativeFilters.push(...drawtextFilters(title, size, job.trimStart, rate, extras.fontFile ?? null));
+    }
+  }
   return [
     pts,
     `fps=${job.options.frameRate}`,
     scaleFilter(size.width, size.height, job.autoReframe),
     ...lumetriFilters(job.lumetri),
+    ...creativeFilters,
     `format=${pixelFormat(job.options.format)}`,
   ].join(',');
 }
 
-function audioBody(job: ExportJob, rate: number): string {
-  const process = audioProcessFilters(job.audio, job.volume, rate);
-  return ['asetpts=PTS-STARTPTS', ...process].join(',');
+function audioBody(job: ExportJob, rate: number, clipId: string | null, duration: number): string {
+  if (!job.creative) {
+    const process = audioProcessFilters(job.audio, job.volume, rate);
+    return ['asetpts=PTS-STARTPTS', ...process].join(',');
+  }
+  const envelope = clipId ? clipEnvelope(job.creative, clipId) : job.creative.programAudio;
+  const trackId = clipId
+    ? (job.clips.find((clip) => clip.clipId === clipId)?.trackId ?? 'a1')
+    : 'a1';
+  const fader = trackFader(mixTracks(job), job.creative.trackMix, trackId);
+  const mix = clamp(job.volume * fader * normalizeLinearGain(job.creative.loudness), 0, 4);
+  const curve = hasGainCurve(envelope) ? volumeFilter(envelope, duration, mix) : null;
+  const constant = curve ? 1 : clamp(mix * envelope.volume, 0, 4);
+  const process = audioProcessFilters(job.audio, constant, rate);
+  return ['asetpts=PTS-STARTPTS', ...process, curve].filter((part): part is string => Boolean(part)).join(',');
 }
 
 function codecArgs(job: ExportJob, withAudio: boolean): string[] {
   const { format, quality } = job.options;
   const crf = qualityToCrf(quality);
-  const args: string[] = [];
-  if (format === 'webm') {
-    args.push('-c:v', 'libvpx-vp9', '-crf', String(crf), '-b:v', '0', '-row-mt', '1', '-cpu-used', '2', '-deadline', 'good', '-pix_fmt', 'yuv420p');
-    if (withAudio) args.push('-c:a', 'libopus', '-b:a', audioBitrate(quality));
-  } else if (format === 'mov') {
-    args.push('-c:v', 'prores_ks', '-profile:v', String(qualityToProresProfile(quality)), '-pix_fmt', 'yuv422p10le', '-vendor', 'apl0');
-    if (withAudio) args.push('-c:a', 'pcm_s16le');
-  } else {
-    args.push('-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf), '-profile:v', 'high', '-pix_fmt', 'yuv420p');
-    if (withAudio) args.push('-c:a', 'aac', '-b:a', audioBitrate(quality));
-    args.push('-movflags', '+faststart');
+  const selected = chosenEncoder(job);
+  const args = [...encoderArgs(selected.codec, crf, quality)];
+  if (selected.codec === 'prores_ks') {
+    const profileAt = args.indexOf('-profile:v');
+    if (profileAt >= 0) args[profileAt + 1] = String(qualityToProresProfile(quality));
   }
+  if (withAudio) {
+    if (format === 'mov') args.push('-c:a', 'pcm_s16le');
+    else args.push('-c:a', audioCodecName(format), '-b:a', audioBitrate(quality));
+  }
+  if (format === 'mp4') args.push('-movflags', '+faststart');
   if (withAudio) args.push('-ar', '48000');
   args.push('-r', String(job.options.frameRate));
   return args;
 }
 
-function videoCodecName(format: ExportFormat): string {
-  if (format === 'webm') return 'libvpx-vp9';
-  if (format === 'mov') return 'prores_ks';
-  return 'libx264';
+function videoCodecName(job: ExportJob): string {
+  return chosenEncoder(job).codec || softwareCodecName(job.options.format, deliveryCodec(job));
 }
 
 function audioCodecName(format: ExportFormat): string {
@@ -910,16 +1034,17 @@ function buildSingle(
   size: { width: number; height: number },
   duration: number,
   withAudio: boolean,
-  warnings: string[]
+  warnings: string[],
+  extras: PictureExtras,
 ): ExportPlan {
   const edge = edgeTransition(job.transition, duration, size.width, size.height, job.options.frameRate);
-  const picture = [videoBody(job, size, job.playbackRate), edge].filter(Boolean).join(',');
+  const picture = [videoBody(job, size, job.playbackRate, extras), edge].filter(Boolean).join(',');
   const args = [
     '-hide_banner', '-y', '-nostdin', '-progress', 'pipe:1', '-nostats',
     '-ss', sec(job.trimStart), '-to', sec(job.trimEnd), '-i', job.sourcePath,
   ];
   if (withAudio) {
-    args.push('-filter_complex', `[0:v]${picture}[v];[0:a]${audioBody(job, job.playbackRate)}[a]`);
+    args.push('-filter_complex', `[0:v]${picture}[v];[0:a]${audioBody(job, job.playbackRate, null, duration)}[a]`);
     args.push('-map', '[v]', '-map', '[a]');
   } else {
     args.push('-vf', picture, '-map', '0:v:0', '-an');
@@ -933,7 +1058,7 @@ function buildSingle(
     height: size.height,
     frameRate: job.options.frameRate,
     format: job.options.format,
-    videoCodec: videoCodecName(job.options.format),
+    videoCodec: videoCodecName(job),
     audioCodec: withAudio ? audioCodecName(job.options.format) : null,
     canRetryWithoutAudio: withAudio,
     warnings,
@@ -947,7 +1072,7 @@ function buildBlack(
   duration: number,
   audioSource: { path: string; ss: number; to: number } | null,
   withAudio: boolean,
-  warnings: string[]
+  warnings: string[],
 ): ExportPlan {
   const args = [
     '-hide_banner', '-y', '-nostdin', '-progress', 'pipe:1', '-nostats',
@@ -955,7 +1080,7 @@ function buildBlack(
   ];
   if (withAudio && audioSource) {
     args.push('-ss', sec(audioSource.ss), '-to', sec(audioSource.to), '-i', audioSource.path);
-    args.push('-filter_complex', `[1:a]${audioBody(job, job.playbackRate)}[a]`);
+    args.push('-filter_complex', `[1:a]${audioBody(job, job.playbackRate, null, duration)}[a]`);
     args.push('-map', '0:v:0', '-map', '[a]', '-shortest');
   } else {
     args.push('-map', '0:v:0', '-an');
@@ -969,7 +1094,7 @@ function buildBlack(
     height: size.height,
     frameRate: job.options.frameRate,
     format: job.options.format,
-    videoCodec: videoCodecName(job.options.format),
+    videoCodec: videoCodecName(job),
     audioCodec: withAudio && audioSource ? audioCodecName(job.options.format) : null,
     canRetryWithoutAudio: false,
     warnings,
@@ -984,7 +1109,8 @@ function buildSequence(
   externalAudio: MediaSegment[],
   withAudio: boolean,
   primaryAudio: boolean,
-  warnings: string[]
+  warnings: string[],
+  extras: PictureExtras,
 ): ExportPlan {
   const args = ['-hide_banner', '-y', '-nostdin', '-progress', 'pipe:1', '-nostats'];
   const media = [...videos, ...(withAudio ? externalAudio : [])];
@@ -992,21 +1118,23 @@ function buildSequence(
     args.push('-ss', sec(seg.ss), '-to', sec(seg.to), '-i', seg.sourcePath);
   }
   const chains: string[] = [];
-  const picture = videoBody(job, size, job.playbackRate);
+  const picture = videoBody(job, size, job.playbackRate, extras);
   videos.forEach((seg, index) => {
     chains.push(`[${index}:v]${picture}[v${index}]`);
     if (!withAudio) return;
     if (seg.role === 'primary-video' && !primaryAudio) {
       chains.push(`anullsrc=channel_layout=stereo:sample_rate=48000,atrim=end=${sec(seg.duration)}[a${index}]`);
     } else {
-      chains.push(`[${index}:a]${audioBody(job, job.playbackRate)}[a${index}]`);
+      const audioClipId = seg.role === 'primary-video' ? null : seg.clipId ?? null;
+      chains.push(`[${index}:a]${audioBody(job, job.playbackRate, audioClipId, seg.duration)}[a${index}]`);
     }
   });
 
   let videoLabel = 'v0';
   let audioLabel = 'a0';
   let timeline = videos[0].duration;
-  if (videos.length > 1 && job.transition === 'cut') {
+  const hasClipTransitions = (job.creative?.transitions.length ?? 0) > 0;
+  if (videos.length > 1 && job.transition === 'cut' && !hasClipTransitions) {
     if (withAudio) {
       const pairs = videos.map((_, i) => `[v${i}][a${i}]`).join('');
       chains.push(`${pairs}concat=n=${videos.length}:v=1:a=1[vx][ax]`);
@@ -1019,9 +1147,19 @@ function buildSequence(
     }
     timeline = videos.reduce((sum, seg) => sum + seg.duration, 0);
   } else if (videos.length > 1) {
-    const name = XFADE[job.transition as Exclude<VideoTransition, 'cut'>];
+    const nameDefault = job.transition === 'cut' ? null : XFADE[job.transition as Exclude<VideoTransition, 'cut'>];
     for (let i = 1; i < videos.length; i += 1) {
-      const fd = Math.min(transitionDuration(videos[i - 1].duration), videos[i].duration / 2, videos[i - 1].duration / 2);
+      const left = videos[i - 1];
+      const right = videos[i];
+      const match = (job.creative?.transitions ?? []).find((item) =>
+        Boolean(left.clipId) && item.outgoingClipId === left.clipId && item.incomingClipId === right.clipId);
+      const fallbackFd = Math.min(transitionDuration(left.duration), right.duration / 2, left.duration / 2);
+      let name = match ? xfadeName(match.kind) : nameDefault;
+      let fd = match ? Math.min(match.duration, right.duration / 2, left.duration / 2) : fallbackFd;
+      if (!name) {
+        name = 'fade';
+        fd = Math.min(0.04, right.duration / 2, left.duration / 2);
+      }
       const offset = Math.max(0, timeline - fd);
       const vOut = `vx${i}`;
       chains.push(`[${videoLabel}][v${i}]xfade=transition=${name}:duration=${sec(fd)}:offset=${sec(offset)}[${vOut}]`);
@@ -1049,7 +1187,7 @@ function buildSequence(
   if (withAudio && externalAudio.length > 0) {
     externalAudio.forEach((_clip, offset) => {
       const index = videos.length + offset;
-      chains.push(`[${index}:a]${audioBody(job, job.playbackRate)}[mx${offset}]`);
+      chains.push(`[${index}:a]${audioBody(job, job.playbackRate, externalAudio[offset]?.clipId ?? null, externalAudio[offset]?.duration ?? 0)}[mx${offset}]`);
       const mixed = `am${offset}`;
       if (job.audio.autoDuck) {
         chains.push(`[mx${offset}][${audioLabel}]sidechaincompress=threshold=0.05:ratio=8:attack=20:release=250[duck${offset}]`);
@@ -1075,7 +1213,7 @@ function buildSequence(
     height: size.height,
     frameRate: job.options.frameRate,
     format: job.options.format,
-    videoCodec: videoCodecName(job.options.format),
+    videoCodec: videoCodecName(job),
     audioCodec: withAudio ? audioCodecName(job.options.format) : null,
     canRetryWithoutAudio: withAudio && externalAudio.length === 0,
     warnings,
@@ -1091,7 +1229,9 @@ export function buildExportPlan(job: ExportJob, options: BuildOptions = {}): Exp
   validateRanges(job, outputPath);
   const includeAudio = options.includeAudio !== false;
   const masterSilent = job.muted || job.volume <= 0;
-  const primaryAudio = includeAudio && !masterSilent && !job.audioTrackMuted;
+  const programFader = job.creative ? trackFader(mixTracks(job), job.creative.trackMix, 'a1') : 1;
+  const primaryAudio = includeAudio && !masterSilent && !job.audioTrackMuted && programFader > 0;
+  const extras: PictureExtras = { lutCubePath: options.lutCubePath, fontFile: options.fontFile };
   const size = outputSize(job.options.resolution, job.autoReframe);
   const rate = job.playbackRate;
   const primaryDuration = segmentDuration(job.trimStart, job.trimEnd, rate);
@@ -1105,6 +1245,8 @@ export function buildExportPlan(job: ExportJob, options: BuildOptions = {}): Exp
       timelineStart: clip.startTime,
       duration: segmentDuration(clip.inPoint, clip.outPoint, rate),
       role: 'video-clip' as const,
+      clipId: clip.clipId,
+      trackId: clip.trackId,
     }))
     .sort((a, b) => a.timelineStart - b.timelineStart);
 
@@ -1119,6 +1261,8 @@ export function buildExportPlan(job: ExportJob, options: BuildOptions = {}): Exp
           timelineStart: clip.startTime,
           duration: segmentDuration(clip.inPoint, clip.outPoint, rate),
           role: 'audio-clip' as const,
+          clipId: clip.clipId,
+          trackId: clip.trackId,
         }));
 
   const videos: MediaSegment[] = [];
@@ -1130,11 +1274,15 @@ export function buildExportPlan(job: ExportJob, options: BuildOptions = {}): Exp
       timelineStart: 0,
       duration: primaryDuration,
       role: 'primary-video',
+      clipId: 'program',
     });
   }
   videos.push(...videoClips);
 
   const warnings = collectWarnings(videos);
+  if (job.creative?.lut && !options.lutCubePath) {
+    warnings.push('The imported LUT is written beside the encode and applied with lut3d.');
+  }
   const anyAudio = primaryAudio || externalAudio.length > 0;
   if (videos.length === 0 && !anyAudio) {
     throw new ExportPlanError('All tracks are muted. Unmute a video or audio track before exporting.');
@@ -1155,8 +1303,8 @@ export function buildExportPlan(job: ExportJob, options: BuildOptions = {}): Exp
     externalAudio.length === 0;
 
   if (simple) {
-    return buildSingle(job, outputPath, size, primaryDuration, primaryAudio, warnings);
+    return buildSingle(job, outputPath, size, primaryDuration, primaryAudio, warnings, extras);
   }
 
-  return buildSequence(job, outputPath, size, videos, externalAudio, anyAudio, primaryAudio, warnings);
+  return buildSequence(job, outputPath, size, videos, externalAudio, anyAudio, primaryAudio, warnings, extras);
 }

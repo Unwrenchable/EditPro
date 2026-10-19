@@ -3,8 +3,11 @@
  * Cancel uses SIGTERM, or taskkill /t /f on Windows so the ffmpeg tree actually dies.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { firstExistingFont, formatCube, isHardwareEncoderFailure, parseEncoderList } from './creative.js';
 import {
   buildExportPlan,
   createProgressParser,
@@ -24,6 +27,21 @@ interface ActiveJob {
 
 const jobs = new Map<string, ActiveJob>();
 const pendingCancel = new Set<string>();
+
+export function probeEncoders(ffmpegPath: string): Promise<string[]> {
+  return new Promise((resolve) => {
+    const child = spawn(ffmpegPath, ['-hide_banner', '-encoders'], { windowsHide: true });
+    let text = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      text += chunk.toString('utf8');
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      text += chunk.toString('utf8');
+    });
+    child.on('error', () => resolve([]));
+    child.on('close', () => resolve(parseEncoderList(text)));
+  });
+}
 
 export function hasActiveExport(): boolean {
   return jobs.size > 0;
@@ -129,41 +147,66 @@ export interface ExportRunResult {
   message?: string;
 }
 
+async function writeLutCube(job: ExportJob): Promise<string | null> {
+  if (!job.creative?.lut) return null;
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'editpro-lut-'));
+  const file = path.join(dir, 'grade.cube');
+  await fs.writeFile(file, formatCube(job.creative.lut), 'utf8');
+  return file;
+}
+
+function softwareJob(job: ExportJob): ExportJob {
+  return {
+    ...job,
+    options: { ...job.options, encoder: 'software' },
+  };
+}
+
 export async function runFfmpegExport(options: {
   ffmpegPath: string;
   job: ExportJob;
   onProgress: (update: ProgressUpdate) => void;
 }): Promise<ExportRunResult> {
   const { ffmpegPath, job, onProgress } = options;
-  let plan = buildExportPlan(job, { includeAudio: true });
+  const fontFile = firstExistingFont((candidate) => {
+    try {
+      return fsSync.existsSync(candidate);
+    } catch {
+      return false;
+    }
+  });
+  let lutCubePath: string | null = null;
   try {
-    await fs.access(path.dirname(plan.outputPath));
+    lutCubePath = await writeLutCube(job);
   } catch {
     return {
       status: 'error',
-      outputPath: plan.outputPath,
-      message: 'The output folder does not exist. Choose a folder that is already on disk.',
+      outputPath: job.outputPath,
+      message: 'Export failed: the LUT cube could not be written to a temp file.',
     };
   }
 
-  const attempt = async (includeAudio: boolean) => {
-    if (!includeAudio) plan = buildExportPlan(job, { includeAudio: false });
-    return spawnOnce(job.jobId, ffmpegPath, plan.args, plan.outputPath, plan.outputDurationSec, onProgress);
-  };
+  const planOptions = { lutCubePath, fontFile };
+  let activeJob = job;
+  let plan = buildExportPlan(activeJob, { includeAudio: true, ...planOptions });
+  let fellBackToSoftware = false;
+  try {
+    try {
+      await fs.access(path.dirname(plan.outputPath));
+    } catch {
+      return {
+        status: 'error',
+        outputPath: plan.outputPath,
+        message: 'The output folder does not exist. Choose a folder that is already on disk.',
+      };
+    }
 
-  let result = await attempt(true);
-  if (result.cancelled) {
-    await removePartial(plan.outputPath);
-    pendingCancel.delete(job.jobId);
-    return { status: 'cancelled', outputPath: plan.outputPath };
-  }
-  if (result.spawnError) {
-    await removePartial(plan.outputPath);
-    return { status: 'error', outputPath: plan.outputPath, message: explainSpawnError(result.spawnError) };
-  }
-  if (result.code !== 0 && plan.canRetryWithoutAudio && isMissingAudioError(result.stderr)) {
-    await removePartial(plan.outputPath);
-    result = await attempt(false);
+    const attempt = async (includeAudio: boolean) => {
+      plan = buildExportPlan(activeJob, { includeAudio, ...planOptions });
+      return spawnOnce(activeJob.jobId, ffmpegPath, plan.args, plan.outputPath, plan.outputDurationSec, onProgress);
+    };
+
+    let result = await attempt(true);
     if (result.cancelled) {
       await removePartial(plan.outputPath);
       pendingCancel.delete(job.jobId);
@@ -173,24 +216,65 @@ export async function runFfmpegExport(options: {
       await removePartial(plan.outputPath);
       return { status: 'error', outputPath: plan.outputPath, message: explainSpawnError(result.spawnError) };
     }
+    const hardware = (activeJob.options.encoder ?? 'software') !== 'software';
+    if (result.code !== 0 && hardware && isHardwareEncoderFailure(result.stderr)) {
+      await removePartial(plan.outputPath);
+      activeJob = softwareJob(job);
+      fellBackToSoftware = true;
+      result = await attempt(true);
+      if (result.cancelled) {
+        await removePartial(plan.outputPath);
+        pendingCancel.delete(job.jobId);
+        return { status: 'cancelled', outputPath: plan.outputPath };
+      }
+      if (result.spawnError) {
+        await removePartial(plan.outputPath);
+        return { status: 'error', outputPath: plan.outputPath, message: explainSpawnError(result.spawnError) };
+      }
+    }
+    if (result.code !== 0 && plan.canRetryWithoutAudio && isMissingAudioError(result.stderr)) {
+      await removePartial(plan.outputPath);
+      result = await attempt(false);
+      if (result.cancelled) {
+        await removePartial(plan.outputPath);
+        pendingCancel.delete(job.jobId);
+        return { status: 'cancelled', outputPath: plan.outputPath };
+      }
+      if (result.spawnError) {
+        await removePartial(plan.outputPath);
+        return { status: 'error', outputPath: plan.outputPath, message: explainSpawnError(result.spawnError) };
+      }
+      if (result.code === 0) {
+        pendingCancel.delete(job.jobId);
+        return {
+          status: 'done',
+          outputPath: plan.outputPath,
+          message: fellBackToSoftware
+            ? 'Exported picture only with the software encoder — the hardware encoder was unavailable and the source has no audio stream.'
+            : 'Exported picture only — the source file has no audio stream.',
+        };
+      }
+    }
     if (result.code === 0) {
       pendingCancel.delete(job.jobId);
       return {
         status: 'done',
         outputPath: plan.outputPath,
-        message: 'Exported picture only — the source file has no audio stream.',
+        message: fellBackToSoftware
+          ? 'Hardware encoder was unavailable, so this file was encoded with the software encoder.'
+          : undefined,
       };
     }
-  }
-  if (result.code === 0) {
+    await removePartial(plan.outputPath);
     pendingCancel.delete(job.jobId);
-    return { status: 'done', outputPath: plan.outputPath };
+    return {
+      status: 'error',
+      outputPath: plan.outputPath,
+      message: explainFfmpegFailure(result.code, result.stderr),
+    };
+  } finally {
+    if (lutCubePath) {
+      await fs.rm(path.dirname(lutCubePath), { recursive: true, force: true }).catch(() => undefined);
+    }
   }
-  await removePartial(plan.outputPath);
-  pendingCancel.delete(job.jobId);
-  return {
-    status: 'error',
-    outputPath: plan.outputPath,
-    message: explainFfmpegFailure(result.code, result.stderr),
-  };
 }

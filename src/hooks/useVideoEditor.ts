@@ -29,6 +29,7 @@ import {
   type HistoryState,
 } from '../utils/history';
 import { fileMediaPath, revokeIfBlob } from '../utils/mediaFiles';
+import { monitorLinearGain, type CreativeState } from '../utils/video/creative';
 import { clamp } from '../utils/videoUtils';
 
 interface VideoModel {
@@ -96,6 +97,7 @@ function toVideoState(model: VideoModel): VideoEditorState {
     tracks: snap.tracks,
     clips: snap.clips,
     transition: snap.transition,
+    creative: snap.creative,
     sourcePath: model.mediaPath,
   };
 }
@@ -121,9 +123,19 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     const video = videoRef.current;
     if (!video) return;
     if (video.playbackRate !== present.playbackRate) video.playbackRate = present.playbackRate;
-    if (video.volume !== present.volume) video.volume = present.volume;
+    const monitor = Math.min(1, monitorLinearGain({
+      master: present.volume,
+      muted: present.isMuted,
+      tracks: present.tracks,
+      creative: present.creative,
+      sourceTime: model.currentTime,
+      trimStart: present.trimStart,
+      trimEnd: present.trimEnd,
+      playbackRate: present.playbackRate,
+    }));
+    if (video.volume !== monitor) video.volume = monitor;
     if (video.muted !== present.isMuted) video.muted = present.isMuted;
-  }, [present.playbackRate, present.volume, present.isMuted, model.videoUrl, videoRef]);
+  }, [present, model.currentTime, model.videoUrl, videoRef]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -423,11 +435,23 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
 
   const removeTrack = useCallback((trackId: string) => {
     setModel((prev) =>
-      commitVideo(prev, (snap) => ({
-        ...snap,
-        tracks: snap.tracks.filter((t) => t.id !== trackId),
-        clips: snap.clips.filter((c) => c.trackId !== trackId),
-      })),
+      commitVideo(prev, (snap) => {
+        const clips = snap.clips.filter((c) => c.trackId !== trackId);
+        const clipIds = new Set(clips.map((clip) => clip.id));
+        return {
+          ...snap,
+          tracks: snap.tracks.filter((t) => t.id !== trackId),
+          clips,
+          creative: {
+            ...snap.creative,
+            trackMix: snap.creative.trackMix.filter((mix) => mix.trackId !== trackId),
+            titles: snap.creative.titles.filter((title) => title.trackId !== trackId),
+            clipAudio: snap.creative.clipAudio.filter((audio) => clipIds.has(audio.clipId)),
+            transitions: snap.creative.transitions.filter((item) =>
+              clipIds.has(item.outgoingClipId) && clipIds.has(item.incomingClipId)),
+          },
+        };
+      }),
     );
   }, []);
 
@@ -478,22 +502,49 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
         if (atTime <= clip.startTime || atTime >= clip.endTime) return snap;
         const splitOffset = atTime - clip.startTime;
         const firstHalf: TimelineClip = { ...clip, endTime: atTime, outPoint: clip.inPoint + splitOffset };
+        const secondId = `clip_${Date.now()}`;
         const secondHalf: TimelineClip = {
           ...clip,
-          id: `clip_${Date.now()}`,
+          id: secondId,
           startTime: atTime,
           inPoint: clip.inPoint + splitOffset,
         };
+        const existingAudio = snap.creative.clipAudio.find((audio) => audio.clipId === clipId);
+        const clipAudio = existingAudio
+          ? [
+              ...snap.creative.clipAudio,
+              { ...existingAudio, clipId: secondId, keyframes: [], fadeIn: 0 },
+            ]
+          : snap.creative.clipAudio;
         return {
           ...snap,
           clips: snap.clips.map((c) => (c.id === clipId ? firstHalf : c)).concat(secondHalf),
+          creative: {
+            ...snap.creative,
+            clipAudio,
+            transitions: snap.creative.transitions.filter((item) =>
+              item.outgoingClipId !== clipId && item.incomingClipId !== clipId),
+          },
         };
       }),
     );
   }, []);
 
   const deleteClip = useCallback((clipId: string) => {
-    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, clips: snap.clips.filter((c) => c.id !== clipId) })));
+    setModel((prev) => commitVideo(prev, (snap) => ({
+      ...snap,
+      clips: snap.clips.filter((c) => c.id !== clipId),
+      creative: {
+        ...snap.creative,
+        clipAudio: snap.creative.clipAudio.filter((audio) => audio.clipId !== clipId),
+        transitions: snap.creative.transitions.filter((item) =>
+          item.outgoingClipId !== clipId && item.incomingClipId !== clipId),
+      },
+    })));
+  }, []);
+
+  const setCreative = useCallback((creative: CreativeState, coalesceKey?: string) => {
+    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, creative }), coalesceKey));
   }, []);
 
   const applyMagicPlan = useCallback(
@@ -628,6 +679,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     moveClip,
     splitClip,
     deleteClip,
+    setCreative,
     applyMagicPlan,
     resetVideo,
     undo,

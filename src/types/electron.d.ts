@@ -43,6 +43,7 @@ export interface EditProBridge {
   getPathForFile(file: File): string;
   materializeVideoSource(fileName: string, bytes: ArrayBuffer): Promise<string>;
   startVideoExport(request: ExportJob): Promise<VideoExportResult>;
+  listVideoEncoders?(): Promise<string[]>;
   cancelVideoExport(jobId: string): Promise<boolean>;
   onExportEvent(listener: (event: VideoExportEvent) => void): () => void;
   showItemInFolder(filePath: string): Promise<boolean>;

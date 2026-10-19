@@ -2249,3 +2249,141 @@
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* Creative preview and mixer */
+.program-monitor {
+  position: relative;
+  container-type: size;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.program-video-graded .preview-video {
+  opacity: 0;
+}
+
+.grade-canvas,
+.transition-veil,
+.program-title {
+  position: absolute;
+  pointer-events: none;
+}
+
+.grade-canvas,
+.transition-veil {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.grade-canvas {
+  object-fit: contain;
+}
+
+.program-title {
+  white-space: pre;
+  line-height: 1.1;
+  font-weight: 700;
+}
+
+.program-title-left { transform: translate(0, -50%); }
+.program-title-center { transform: translate(-50%, -50%); }
+.program-title-right { transform: translate(-100%, -50%); }
+
+.creative-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.creative-inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.creative-inline label,
+.title-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #aaa;
+}
+
+.creative-inline input,
+.title-editor input,
+.title-editor select {
+  background: #1c1c1c;
+  color: #eee;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+.mixer-tracks,
+.keyframe-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mixer-row,
+.keyframe-list li {
+  display: grid;
+  grid-template-columns: 28px 1fr auto auto;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+}
+
+.lgg-wheel {
+  border: 1px solid #2c2c2c;
+  border-radius: 8px;
+  margin: 0;
+  padding: 6px 8px;
+}
+
+.lgg-wheel legend {
+  padding: 0 4px;
+  font-size: 11px;
+  text-transform: capitalize;
+  color: #bbb;
+}
+
+.tl-waveform {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 1px;
+  width: 100%;
+  height: calc(100% - 4px);
+  pointer-events: none;
+}
+
+.tl-program-wave,
+.tl-cut-drop {
+  position: absolute;
+  top: 2px;
+}
+
+.tl-cut-drop {
+  width: 12px;
+  height: calc(100% - 4px);
+  z-index: 3;
+}
+
+.tl-cut-drop:hover,
+.tl-cut-drop.dragover {
+  background: rgba(124, 92, 191, 0.45);
+}
+
+.export-modal {
+  width: min(520px, 94vw);
+}

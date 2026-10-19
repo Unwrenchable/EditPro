@@ -7,6 +7,9 @@ import VideoAdjustmentPanel from './VideoAdjustmentPanel';
 import VideoScopesPanel from './VideoScopesPanel';
 import VideoExportModal from './VideoExportModal';
 import { buildLumetriFilter, getAutoReframeOverlay } from '../../utils/videoUtils';
+import { placeTransition } from '../../utils/video/creative';
+import ProgramOverlay from './ProgramOverlay';
+import { useWaveformPeaks } from '../../hooks/useWaveformPeaks';
 import { formatFileSize } from '../../utils/imageFilters';
 import { resolveSourcePath } from '../../utils/video/sourcePath';
 import type { MagicMoviePlan, VideoExportOptions } from '../../types';
@@ -65,6 +68,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
 
   const videoFilter = buildLumetriFilter(state.lumetri);
   const reframeOverlay = getAutoReframeOverlay(state.autoReframe);
+  const waveform = useWaveformPeaks(state.videoUrl);
 
   // ── File handling ──────────────────────────────────────────────────────────
   const handleOpenVideo = useCallback(() => fileInputRef.current?.click(), []);
@@ -98,6 +102,16 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   const handleRemoveTrack    = useCallback((id: string) => editor.removeTrack(id), [editor]);
   const handleDeleteClip     = useCallback((id: string) => editor.deleteClip(id), [editor]);
   const handleSplitClip      = useCallback((id: string, t: number) => editor.splitClip(id, t), [editor]);
+  const handleDropTransition = useCallback((outgoingClipId: string, incomingClipId: string, kind: Parameters<typeof placeTransition>[3]) => {
+    const placed = placeTransition(state.clips, outgoingClipId, incomingClipId, kind);
+    if (!placed) return;
+    const without = state.creative.transitions.filter((item) =>
+      !(item.outgoingClipId === placed.outgoingClipId && item.incomingClipId === placed.incomingClipId));
+    editor.setCreative({
+      ...state.creative,
+      transitions: [...without, { ...placed, id: `xfade_${Date.now()}` }],
+    });
+  }, [editor, state.clips, state.creative]);
   const handleDetectScenes   = useCallback(() => {
     // Simulated scene detection: add markers at regular intervals
     const interval = Math.max(state.duration / 8, 2);
@@ -175,6 +189,17 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           <div className="video-area">
             {/* ── Program Monitor ── */}
             <div className="video-container" style={{ position: 'relative' }}>
+              <ProgramOverlay
+                creative={state.creative}
+                currentTime={state.currentTime}
+                trimStart={state.trimStart}
+                trimEnd={state.trimEnd}
+                playbackRate={state.playbackRate}
+                transition={state.transition}
+                clips={state.clips}
+                lumetriFilter={videoFilter}
+                videoRef={videoRef}
+              >
               <video
                 ref={videoRef}
                 src={state.videoUrl}
@@ -185,6 +210,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
                 onEnded={handleEnded}
                 aria-label="Video preview"
               />
+              </ProgramOverlay>
               {/* Auto Reframe crop overlay */}
               {reframeOverlay && (
                 <div
@@ -251,6 +277,9 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           onRemoveTrack={handleRemoveTrack}
           onDeleteClip={handleDeleteClip}
           onSplitClip={handleSplitClip}
+          peaks={waveform.peaks}
+          mediaDuration={waveform.duration || state.duration}
+          onDropTransition={handleDropTransition}
         />
 
         {state.file && (
@@ -293,6 +322,13 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
         onDetectScenes={handleDetectScenes}
         transition={state.transition}
         onTransitionChange={editor.setTransition}
+        creative={state.creative}
+        tracks={state.tracks}
+        clips={state.clips}
+        currentTime={state.currentTime}
+        duration={state.duration}
+        onCreativeChange={editor.setCreative}
+        onSetTrackMuted={handleSetTrackMuted}
       />
 
       {showExportModal && state.file && (
@@ -310,6 +346,8 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           transition={state.transition}
           clips={state.clips}
           tracks={state.tracks}
+          creative={state.creative}
+          onCreativeChange={editor.setCreative}
           initialPlatform={exportSeed.platform}
           initialQuality={exportSeed.quality}
           onTransitionChange={editor.setTransition}

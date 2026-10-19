@@ -1,12 +1,14 @@
 import React, { useCallback } from 'react';
 import { formatTime } from '../../utils/videoUtils';
 import type { TimelineClip as TimelineClipType } from '../../types';
+import WaveformView from './WaveformView';
 
 interface TimelineClipProps {
   clip: TimelineClipType;
   pixelsPerSecond: number;
   trackHeight: number;
   isSelected: boolean;
+  peaks?: readonly number[];
   onSelect: (clipId: string) => void;
   onDoubleClick: (clipId: string) => void;
 }
@@ -20,6 +22,7 @@ const TimelineClipComponent: React.FC<TimelineClipProps> = ({
   pixelsPerSecond,
   trackHeight,
   isSelected,
+  peaks,
   onSelect,
   onDoubleClick,
 }) => {
@@ -60,6 +63,9 @@ const TimelineClipComponent: React.FC<TimelineClipProps> = ({
         if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); onDoubleClick(clip.id); }
       }}
     >
+      {peaks && peaks.length > 0 && (
+        <WaveformView peaks={peaks} width={width} height={Math.max(8, trackHeight - 8)} />
+      )}
       <span className="tl-clip-label">{label}</span>
     </div>
   );
