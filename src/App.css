@@ -916,6 +916,28 @@
   margin: 0;
 }
 
+.export-encoder-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #9a9a9a;
+}
+
+.program-picture-gpu .preview-video {
+  opacity: 0;
+}
+
+.gpu-preview-canvas {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+  visibility: hidden;
+}
+
+.program-picture-gpu .gpu-preview-canvas {
+  visibility: visible;
+}
+
 .export-progress-block {
   display: flex;
   flex-direction: column;

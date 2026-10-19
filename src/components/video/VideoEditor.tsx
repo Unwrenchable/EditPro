@@ -16,6 +16,9 @@ import { sampleEffect, sampleTransform } from '../../utils/video/keyframes';
 import { clipAtPlayhead, editPoints, neighborEdit } from '../../utils/video/timelineEdit';
 import { matchNleShortcut, nleActionKind } from '../../utils/video/nleShortcuts';
 import { monitorScale, resolutionLabel, selectPreviewUrl } from '../../playback/frameClock';
+import { packPreviewGrade, previewBackendLabel } from '../../playback/gpu/grade';
+import { useGpuPreview } from '../../playback/gpu/useGpuPreview';
+import { liftGammaGainIsNeutral } from '../../utils/video/creative';
 import { usePreviewSrc } from '../../playback/usePreviewSrc';
 import { useProxyMedia } from '../../playback/useProxyMedia';
 import PlaybackSettings from './PlaybackSettings';
@@ -25,6 +28,10 @@ function previewLook(state: VideoEditorState, baseFilter: string): {
   filter: string;
   effectFilter: string;
   picture: React.CSSProperties;
+  brightness: number | null;
+  contrast: number | null;
+  saturation: number | null;
+  blur: number | null;
 } {
   const clip = clipAtPlayhead(state.clips, state.tracks, state.currentTime);
   const useClip = Boolean(clip?.keyframes && clip.keyframes.length > 0);
@@ -45,6 +52,10 @@ function previewLook(state: VideoEditorState, baseFilter: string): {
   return {
     filter: [baseFilter, ...extras].filter(Boolean).join(' '),
     effectFilter: extras.join(' '),
+    brightness,
+    contrast,
+    saturation,
+    blur,
     picture: {
       opacity: motion.opacity,
       transform: moved
@@ -75,6 +86,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   const { state } = editor;
   const { loadVideo, applyMagicPlan } = editor;
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const gpuCanvasRef = useRef<HTMLCanvasElement>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportSeed, setExportSeed] = useState<{ platform: VideoExportOptions['platform']; quality: number }>({
     platform: 'youtube',
@@ -109,6 +121,9 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
 
   const videoFilter = buildLumetriFilter(state.lumetri);
   const look = previewLook(state, videoFilter);
+  const previewGrade = packPreviewGrade(state.lumetri, look);
+  const cpuGrade = !liftGammaGainIsNeutral(state.creative.liftGammaGain) || state.creative.lut !== null;
+  const previewBackend = useGpuPreview(videoRef, gpuCanvasRef, previewGrade, Boolean(state.videoUrl) && !cpuGrade);
   const reframeOverlay = getAutoReframeOverlay(state.autoReframe);
   const waveform = useWaveformPeaks(state.videoUrl);
   const proxy = useProxyMedia(state.mediaPath);
@@ -263,11 +278,20 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
                 pictureStyle={look.picture}
                 canvasFilter={look.effectFilter}
                 videoRef={videoRef}
+                gpuActive={previewBackend !== 'css'}
+                previewCanvas={
+                  <canvas
+                    ref={gpuCanvasRef}
+                    className="gpu-preview-canvas"
+                    data-preview-backend={previewBackend}
+                    aria-hidden="true"
+                  />
+                }
               >
               <video
                 ref={videoRef}
                 className="preview-video"
-                style={{ filter: look.filter || undefined }}
+                style={{ filter: previewBackend === 'css' ? (look.filter || undefined) : undefined }}
                 preload="auto"
                 playsInline
                 crossOrigin={playbackUrl?.startsWith('media:') ? 'anonymous' : undefined}
@@ -310,6 +334,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
                   ? `Proxy ${proxy.width}×${proxy.height} · ${resolutionLabel(proxy.resolution)}`
                   : 'Original'
               }
+              rendererLabel={previewBackendLabel(previewBackend)}
               onResolution={proxy.setResolution}
               onToggleProxy={proxy.toggleProxy}
               onCancelProxy={proxy.cancel}

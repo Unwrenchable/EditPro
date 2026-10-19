@@ -26,6 +26,9 @@ interface ProgramOverlayProps {
   /** Keyframed blur, brightness, contrast, and saturation, drawn on top of the graded canvas. */
   canvasFilter?: string;
   videoRef: React.RefObject<HTMLVideoElement | null>;
+  /** GPU compositor is covering the element, so the raw frame stays invisible. */
+  gpuActive?: boolean;
+  previewCanvas?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -58,6 +61,8 @@ const ProgramOverlay: React.FC<ProgramOverlayProps> = ({
   pictureStyle,
   canvasFilter,
   videoRef,
+  gpuActive = false,
+  previewCanvas = null,
   children,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -113,8 +118,15 @@ const ProgramOverlay: React.FC<ProgramOverlayProps> = ({
 
   return (
     <div className="program-monitor" style={edgeCss(edge)}>
-      <div className={gradeActive ? 'program-video-graded program-picture' : 'program-picture'} style={pictureStyle}>
+      <div
+        className={[
+          gradeActive ? 'program-video-graded program-picture' : 'program-picture',
+          gpuActive ? 'program-picture-gpu' : '',
+        ].filter(Boolean).join(' ')}
+        style={pictureStyle}
+      >
         {children}
+        {previewCanvas}
         {gradeActive && (
           <canvas
             ref={canvasRef}
