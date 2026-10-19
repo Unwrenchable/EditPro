@@ -113,6 +113,8 @@ The React UI talks to a platform bridge (`src/platform`). In Electron that bridg
 
 `npm run dev` is the browser session. `npm run dev:electron` is the desktop app. `npm run build` stays the desktop renderer (wasm engines are stubbed so the packaged app does not carry them). `npm run build:web` is the static bundle those engines are allowed to load in.
 
+That web bundle is an installable PWA. `public/manifest.webmanifest`, `public/sw.js`, and `public/icons/` are the install metadata and offline shell. The service worker registers only in a production web or Capacitor build, so the desktop app keeps `worker-src 'none'`. Phones, tablets, and windows narrower than 800px get a stacked layout and a simplified timeline (scrub, pinch zoom, trim, split, delete). A mouse or trackpad keeps the multitrack timeline. `vercel.json` builds with `npm run build:web` and publishes `dist` as a static site.
+
 ### Project structure
 
 ```
@@ -132,6 +134,7 @@ EditPro/
 │   │   ├── useVideoEditor.ts
 │   │   └── useNativeFiles.ts   Platform file open/save
 │   ├── platform/               Desktop IPC and browser/mobile host
+│   ├── pwa/                    Install metadata, service worker, touch layout
 │   ├── types/
 │   │   ├── index.ts            PhotoAdjustments, VideoEditorState, etc.
 │   │   └── electron.d.ts       window.editpro IPC bridge types
