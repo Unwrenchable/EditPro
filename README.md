@@ -175,28 +175,33 @@ The first launch shows a short welcome. **Help → Open Log File** opens a crash
 
 ## 🤖 Agent-Tools Integration
 
-EditPro uses the [agent-tools](https://github.com/Unwrenchable/agent-tools) governance framework for multi-agent development.
+EditPro uses the [agent-tools](https://github.com/Unwrenchable/agent-tools) governance framework. That repo is a Python 3.11+ package; the `agentx` command is the console script declared in its `pyproject.toml`.
+
+From this repository root:
 
 ```bash
-pip install -e path/to/agent-tools
-agentx list                                        # see all EditPro agents
+pip install git+https://github.com/Unwrenchable/agent-tools.git
+python -m pip install requests                     # imported at CLI startup; not declared in the package
+agentx list                                        # package agents plus this repo's .agentx/agents.json
 agentx find photo                                  # find photo-related agents
 agentx check editpro-electron-engineer --profile power
 agentx recommend editpro-photo-engine
 ```
 
-Eight specialist agents are defined in [`.agentx/agents.json`](.agentx/agents.json):
+`agentx` starts at the current directory and walks up to the git root, then merges [`.agentx/agents.json`](.agentx/agents.json) over the package registry (same `id` replaces the package entry). Run it here so the `editpro-*` agents show up. If the install put `agentx` in a user scripts directory that is not on `PATH`, the same commands work as `python -m agent_tools.cli`. The `requests` install is required with the current git package: importing `agentx` loads a provider module that imports `requests`, and `pyproject.toml` does not list it.
 
 | Agent | Responsibility |
 |-------|---------------|
-| `editpro-orchestrator` | Coordinates all agents, routes tasks, tracks releases |
-| `editpro-photo-engine` | Photo adjustments, filter pipeline, canvas export |
-| `editpro-video-engine` | Video playback, timeline, trim, color grading |
-| `editpro-electron-engineer` | Electron main process, IPC, native dialogs, menus |
-| `editpro-ui-engineer` | React components, CSS, dark theme, accessibility |
-| `editpro-test-engineer` | Vitest + Testing Library unit/integration/component tests |
+| `editpro-orchestrator` | Routes work across the specialist agents and tracks releases |
+| `editpro-photo-engine` | Photo adjustments, CSS filter pipeline, canvas export |
+| `editpro-video-engine` | Playback, timeline and keyframes, audio, titles, transitions, color, export presets |
+| `editpro-electron-engineer` | Main process, IPC, `app://` / `media://`, file grants, dialogs, updater |
+| `editpro-ui-engineer` | React components, dark theme, accessibility |
+| `editpro-test-engineer` | Vitest + Testing Library unit and component tests |
+| `editpro-browser-test-engineer` | Electron and Playwright checks of the running UI |
 | `editpro-release-engineer` | electron-builder packaging, GitHub Releases, portable builds |
-| `editpro-security-engineer` | IPC audit, CSP, contextIsolation, dependency scanning |
+| `editpro-security-engineer` | Read-only IPC, CSP, protocol, and grant audit |
+| `editpro-cybersecurity-expert` | Finds, reports, and patches Electron security gaps |
 
 ---
 
