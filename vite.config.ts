@@ -61,6 +61,14 @@ export default defineConfig({
     react(),
     productionContentSecurityPolicy(),
     {
+      name: 'editpro-desktop-viewport',
+      apply: 'build',
+      transformIndexHtml(html) {
+        if (webTarget) return html
+        return html.replace(/\n?\s*<meta name="viewport"[^>]*>/, '')
+      },
+    },
+    {
       name: 'editpro-web-install-meta',
       transformIndexHtml() {
         return webInstallHeadTags(webTarget)

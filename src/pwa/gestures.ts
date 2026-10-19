@@ -25,6 +25,14 @@ export function clampZoom(zoom: number): number {
   return Math.min(8, Math.max(0.5, zoom));
 }
 
-export function prefersCoarseLayout(matches: (query: string) => boolean): boolean {
-  return matches('(pointer: coarse)') || matches('(max-width: 800px)');
+export type LayoutHost = 'electron' | 'web' | 'capacitor';
+
+/**
+ * The simplified timeline is only for a narrow browser or Capacitor window.
+ * A coarse pointer does not count: a desktop mouse and a Windows touch digitizer
+ * both stay on the pro timeline. The desktop Electron window never switches.
+ */
+export function prefersTouchLayout(kind: LayoutHost, matches: (query: string) => boolean): boolean {
+  if (kind === 'electron') return false;
+  return matches('(max-width: 800px)');
 }
