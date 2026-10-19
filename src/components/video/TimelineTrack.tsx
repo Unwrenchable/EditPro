@@ -1,6 +1,8 @@
 import React, { useCallback } from 'react';
 import TimelineClipComponent from './TimelineClip';
-import type { TimelineTrack as TimelineTrackType, TimelineClip } from '../../types';
+import type { TimelineClip, TimelineTool, TimelineTrack as TimelineTrackType } from '../../types';
+import WaveformView from './WaveformView';
+import { slicePeaks, type ClipTransitionKind } from '../../utils/video/creative';
 
 const TRACK_H_VIDEO = 34;
 const TRACK_H_AUDIO = 30;
@@ -11,11 +13,30 @@ interface TimelineTrackProps {
   pixelsPerSecond: number;
   trackWidth: number;
   selectedClipId: string | null;
+  targeted: boolean;
+  tool: TimelineTool;
+  snapping: boolean;
+  snapPointsFor: (clipId: string) => number[];
+  selectedKeyframeId: string | null;
+  onSelectTrack: (trackId: string) => void;
   onSelectClip: (clipId: string) => void;
   onDeleteClip: (clipId: string) => void;
+  onRippleDelete: (clipId: string) => void;
+  onRazor: (clipId: string, time: number) => void;
+  onMove: (clipId: string, trackId: string, startTime: number, coalesceKey: string) => void;
+  onTrim: (clipId: string, edge: 'in' | 'out', time: number, coalesceKey: string) => void;
+  onRippleTrim: (clipId: string, edge: 'in' | 'out', value: number, coalesceKey: string) => void;
+  onRoll: (clipId: string, edge: 'in' | 'out', time: number, coalesceKey: string) => void;
+  onSlip: (clipId: string, newInPoint: number, coalesceKey: string) => void;
+  onSlide: (clipId: string, newStart: number, coalesceKey: string) => void;
+  onSelectKeyframe: (clipId: string, keyframeId: string) => void;
+  onMoveKeyframe: (clipId: string, keyframeId: string, time: number, coalesceKey: string) => void;
   onToggleMute: (trackId: string, muted: boolean) => void;
   onToggleLock: (trackId: string, locked: boolean) => void;
   onRemoveTrack: (trackId: string) => void;
+  peaks?: readonly number[];
+  mediaDuration?: number;
+  onDropTransition?: (outgoingClipId: string, incomingClipId: string, kind: ClipTransitionKind) => void;
 }
 
 const HEADER_W = 100;
@@ -30,13 +51,33 @@ const TimelineTrackComponent: React.FC<TimelineTrackProps> = ({
   pixelsPerSecond,
   trackWidth,
   selectedClipId,
+  targeted,
+  tool,
+  snapping,
+  snapPointsFor,
+  selectedKeyframeId,
+  onSelectTrack,
   onSelectClip,
   onDeleteClip,
+  onRippleDelete,
+  onRazor,
+  onMove,
+  onTrim,
+  onRippleTrim,
+  onRoll,
+  onSlip,
+  onSlide,
+  onSelectKeyframe,
+  onMoveKeyframe,
   onToggleMute,
   onToggleLock,
   onRemoveTrack,
+  peaks = [],
+  mediaDuration = 0,
+  onDropTransition,
 }) => {
   const trackHeight = track.type === 'video' ? TRACK_H_VIDEO : TRACK_H_AUDIO;
+  const orderedClips = [...clips].sort((a, b) => a.startTime - b.startTime);
 
   const handleMute = useCallback(
     (e: React.MouseEvent) => {
@@ -66,12 +107,17 @@ const TimelineTrackComponent: React.FC<TimelineTrackProps> = ({
     <div
       className={`tl-multitrack-row${track.muted ? ' tl-track-muted' : ''}${track.locked ? ' tl-track-locked' : ''}`}
       style={{ height: trackHeight, display: 'flex' }}
+      data-track-id={track.id}
     >
       {/* ── Track header ── */}
       <div
-        className="tl-multitrack-header"
+        className={`tl-multitrack-header${targeted ? ' targeted' : ''}`}
         style={{ width: HEADER_W, minWidth: HEADER_W, height: trackHeight }}
         aria-label={`Track ${track.name}`}
+        onMouseDown={(event) => {
+          event.stopPropagation();
+          onSelectTrack(track.id);
+        }}
       >
         <span className="tl-hd-label">{track.name}</span>
         <button
@@ -107,17 +153,63 @@ const TimelineTrackComponent: React.FC<TimelineTrackProps> = ({
         className={`tl-track${track.type === 'video' ? ' tl-track-video' : ' tl-track-audio'}`}
         style={{ height: trackHeight, width: trackWidth, position: 'relative', flex: 1 }}
       >
-        {clips.map((clip) => (
-          <TimelineClipComponent
-            key={clip.id}
-            clip={clip}
-            pixelsPerSecond={pixelsPerSecond}
-            trackHeight={trackHeight}
-            isSelected={selectedClipId === clip.id}
-            onSelect={onSelectClip}
-            onDoubleClick={onDeleteClip}
-          />
-        ))}
+        {track.type === 'audio' && orderedClips.length === 0 && peaks.length > 0 && (
+          <div className="tl-program-wave" style={{ left: 0, width: trackWidth, height: trackHeight - 4 }}>
+            <WaveformView peaks={peaks} width={Math.max(2, trackWidth)} height={trackHeight - 8} />
+          </div>
+        )}
+        {orderedClips.map((clip, index) => {
+          const next = orderedClips[index + 1];
+          const clipPeaks = track.type === 'audio'
+            ? slicePeaks(peaks, mediaDuration, clip.inPoint, clip.outPoint)
+            : [];
+          return (
+            <React.Fragment key={clip.id}>
+              <TimelineClipComponent
+                clip={clip}
+                pixelsPerSecond={pixelsPerSecond}
+                trackHeight={trackHeight}
+                isSelected={selectedClipId === clip.id}
+                linked={Boolean(clip.linkId)}
+                tool={tool}
+                snapping={snapping}
+                snapPoints={snapPointsFor(clip.id)}
+                selectedKeyframeId={selectedKeyframeId}
+                peaks={clipPeaks}
+                onSelect={onSelectClip}
+                onDoubleClick={onDeleteClip}
+                onRippleDelete={onRippleDelete}
+                onRazor={onRazor}
+                onMove={onMove}
+                onTrim={onTrim}
+                onRippleTrim={onRippleTrim}
+                onRoll={onRoll}
+                onSlip={onSlip}
+                onSlide={onSlide}
+                onSelectKeyframe={onSelectKeyframe}
+                onMoveKeyframe={onMoveKeyframe}
+              />
+              {next && onDropTransition && (
+                <div
+                  className="tl-cut-drop"
+                  style={{ left: clip.endTime * pixelsPerSecond - 6 }}
+                  aria-label={`Drop transition between ${clip.id} and ${next.id}`}
+                  onDragOver={(event) => {
+                    if (event.dataTransfer.types.includes('application/x-editpro-transition')) {
+                      event.preventDefault();
+                    }
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const kind = event.dataTransfer.getData('application/x-editpro-transition') as ClipTransitionKind;
+                    if (kind) onDropTransition(clip.id, next.id, kind);
+                  }}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
     </div>
   );

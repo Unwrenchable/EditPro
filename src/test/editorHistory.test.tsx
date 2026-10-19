@@ -5,6 +5,7 @@ import { usePhotoEditor } from '../hooks/usePhotoEditor';
 import { useVideoEditor } from '../hooks/useVideoEditor';
 import type { MagicMoviePlan } from '../types';
 import { createDefaultPhotoEdits } from '../utils/editSnapshots';
+import { createTitleFromPreset } from '../utils/video/creative';
 import { DEFAULT_AUDIO, DEFAULT_LUMETRI } from '../utils/videoUtils';
 
 function videoRef(duration = 20): RefObject<HTMLVideoElement | null> {
@@ -176,5 +177,29 @@ describe('useVideoEditor history', () => {
     expect(result.current.state.markers).toHaveLength(0);
     expect(result.current.state.playbackRate).toBe(1);
     expect(result.current.canRedo).toBe(true);
+  });
+
+  it('undoes a title and a clip-volume change saved on the creative snapshot', () => {
+    const { result } = renderHook(() => useVideoEditor(videoRef()));
+    const title = createTitleFromPreset('center-title', 0, 4);
+    act(() =>
+      result.current.setCreative({
+        ...result.current.state.creative,
+        titles: [{ ...title, text: 'Hello' }],
+        programAudio: { ...result.current.state.creative.programAudio, volume: 0.4 },
+      }),
+    );
+    expect(result.current.state.creative.titles[0]?.text).toBe('Hello');
+    expect(result.current.state.creative.programAudio.volume).toBe(0.4);
+    expect(result.current.canUndo).toBe(true);
+
+    act(() => result.current.undo());
+    expect(result.current.state.creative.titles).toHaveLength(0);
+    expect(result.current.state.creative.programAudio.volume).toBe(1);
+    expect(result.current.canRedo).toBe(true);
+
+    act(() => result.current.redo());
+    expect(result.current.state.creative.titles[0]?.text).toBe('Hello');
+    expect(result.current.state.creative.programAudio.volume).toBe(0.4);
   });
 });

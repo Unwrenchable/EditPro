@@ -6,12 +6,16 @@ import type {
   LumetriColor,
   PhotoAdjustments,
   PhotoFilterName,
+  ClipKeyframe,
+  EaseCurve,
+  KeyframeProperty,
   TimelineClip,
   TimelineMarker,
   TimelineTrack,
   VideoTransition,
 } from '../types';
 import { DEFAULT_ADJUSTMENTS } from './imageFilters';
+import { createDefaultCreativeState, normalizeCreativeState, type CreativeState } from './video/creative';
 import { DEFAULT_AUDIO, DEFAULT_LUMETRI } from './videoUtils';
 
 const PHOTO_FILTERS: readonly PhotoFilterName[] = [
@@ -39,6 +43,15 @@ const TRANSITIONS: readonly VideoTransition[] = [
 ];
 const AUDIO_CATEGORIES: readonly AudioCategory[] = ['dialogue', 'music', 'sfx', 'ambience'];
 const MARKER_COLORS: readonly TimelineMarker['color'][] = ['red', 'yellow', 'green', 'blue'];
+const EASINGS: readonly EaseCurve[] = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'hold'];
+const KEYFRAME_PROPERTIES: readonly KeyframeProperty[] = [
+  'positionX',
+  'positionY',
+  'scale',
+  'rotation',
+  'opacity',
+  'effect',
+];
 
 /** Creative photo state. Transport and file handles live outside the snapshot. */
 export interface PhotoEditSnapshot {
@@ -66,7 +79,12 @@ export interface VideoEditSnapshot {
   autoReframe: AutoReframeAspect;
   tracks: TimelineTrack[];
   clips: TimelineClip[];
+  /** When true, edits snap to clip edges, the playhead, markers, and in/out. */
+  snapping: boolean;
+  /** Animation of the program picture, in absolute sequence seconds. */
+  programKeyframes: ClipKeyframe[];
   transition: VideoTransition;
+  creative: CreativeState;
 }
 
 export interface MediaBinding {
@@ -108,7 +126,10 @@ export function createDefaultVideoEdits(): VideoEditSnapshot {
     autoReframe: 'original',
     tracks: createDefaultTracks(),
     clips: [],
+    snapping: true,
+    programKeyframes: [],
     transition: 'cut',
+    creative: createDefaultCreativeState(),
   };
 }
 
@@ -205,11 +226,36 @@ function normalizeTrack(value: unknown): TimelineTrack | null {
   };
 }
 
+function normalizeKeyframe(value: unknown): ClipKeyframe | null {
+  const record = asRecord(value);
+  if (!record || typeof record.id !== 'string' || !record.id) return null;
+  const property = oneOf(record.property, KEYFRAME_PROPERTIES, 'opacity');
+  if (record.property !== property) return null;
+  const keyframe: ClipKeyframe = {
+    id: record.id,
+    time: Math.max(0, num(record.time, 0)),
+    property,
+    value: num(record.value, 0),
+    easing: oneOf(record.easing, EASINGS, 'linear'),
+  };
+  if (property === 'effect') {
+    const param = typeof record.effectParam === 'string' ? record.effectParam.trim() : '';
+    if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/.test(param)) return null;
+    keyframe.effectParam = param;
+  }
+  return keyframe;
+}
+
+function normalizeKeyframes(value: unknown): ClipKeyframe[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(normalizeKeyframe).filter((keyframe) => keyframe !== null);
+}
+
 function normalizeClip(value: unknown): TimelineClip | null {
   const record = asRecord(value);
   if (!record || typeof record.id !== 'string' || !record.id) return null;
   if (typeof record.src !== 'string' || typeof record.trackId !== 'string') return null;
-  return {
+  const clip: TimelineClip = {
     id: record.id,
     src: record.src,
     trackId: record.trackId,
@@ -218,6 +264,15 @@ function normalizeClip(value: unknown): TimelineClip | null {
     inPoint: num(record.inPoint, 0),
     outPoint: num(record.outPoint, 0),
   };
+  // Older projects omit link and keyframe fields. Leave them absent so a
+  // version-1 file round-trips without gaining new keys.
+  if ('linkId' in record) {
+    clip.linkId = typeof record.linkId === 'string' && record.linkId ? record.linkId : null;
+  }
+  if ('keyframes' in record) {
+    clip.keyframes = normalizeKeyframes(record.keyframes);
+  }
+  return clip;
 }
 
 export function normalizeVideoEdits(input: unknown): VideoEditSnapshot {
@@ -241,7 +296,10 @@ export function normalizeVideoEdits(input: unknown): VideoEditSnapshot {
     autoReframe: oneOf(record.autoReframe, ASPECTS, 'original'),
     tracks,
     clips,
+    snapping: bool(record.snapping, true),
+    programKeyframes: normalizeKeyframes(record.programKeyframes),
     transition: oneOf(record.transition, TRANSITIONS, 'cut'),
+    creative: normalizeCreativeState(record.creative),
   };
 }
 

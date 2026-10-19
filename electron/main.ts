@@ -23,8 +23,15 @@ import {
 } from './security.js';
 import type { NavigationOptions } from './security.js';
 import { parseExportJob, ExportPlanError, type ExportJob } from './export/plan.js';
-import { cancelAllExports, cancelExportJob, hasActiveExport, runFfmpegExport } from './export/runner.js';
+import { cancelAllExports, cancelExportJob, hasActiveExport, probeEncoders, runFfmpegExport } from './export/runner.js';
 import { ensureFfmpegExecutable, locateFfmpegBinary } from './export/ffmpegLocate.js';
+import { createDesktopSupport, type DesktopSupport } from './updates/controller.js';
+import { applyHardwareDecodeSwitches } from './playback/hwDecode.js';
+import { MEDIA_SCHEME } from './playback/mediaAccess.js';
+import { assertExportSourceAllowed } from './playback/proxyPlan.js';
+import { cancelAllProxies, clearMediaTickets, registerMediaProtocol, registerPlaybackIpc } from './playback/register.js';
+
+applyHardwareDecodeSwitches(app.commandLine, process.platform);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -44,10 +51,21 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
     },
   },
+  {
+    scheme: MEDIA_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
 ]);
 
 // ── Window management ────────────────────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
+let desktop: DesktopSupport | null = null;
 const fileGrants = new FileAccessGrants();
 
 function devServerPort(): string {
@@ -215,6 +233,8 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => {
+    cancelAllProxies();
+    clearMediaTickets();
     fileGrants.clear();
     mainWindow = null;
   });
@@ -234,12 +254,32 @@ app.whenReady().then(() => {
     website: 'https://github.com/Unwrenchable/EditPro',
   });
   registerAppProtocol();
+  registerMediaProtocol({
+    assertTrusted: assertTrustedIpcSender,
+    hasReadGrant: (filePath) => fileGrants.hasRead(filePath),
+    navigation: navigationOptions,
+    proxyRoot: proxyCacheRoot,
+  });
+  registerPlaybackIpc({
+    assertTrusted: assertTrustedIpcSender,
+    hasReadGrant: (filePath) => fileGrants.hasRead(filePath),
+    navigation: navigationOptions,
+    proxyRoot: proxyCacheRoot,
+  });
   installContentSecurityPolicy();
   installPermissionHandlers();
   installNavigationGuards();
   bootSession();
+  desktop = createDesktopSupport({
+    getWindow: () => mainWindow,
+    userData: app.getPath('userData'),
+    version: app.getVersion(),
+    isPackaged: app.isPackaged,
+    assertTrusted: assertTrustedIpcSender,
+  });
   buildApplicationMenu();
   createWindow();
+  desktop.startScheduler();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -252,6 +292,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   cancelAllExports();
+  cancelAllProxies();
   try {
     const meta = readMetaSync();
     writeMetaSync({ ...meta, unclean: false });
@@ -416,11 +457,18 @@ async function assertRegularFileOrMissing(filePath: string): Promise<void> {
   }
 }
 
+function proxyCacheRoot(): string {
+  return path.join(app.getPath('userData'), 'proxies');
+}
+
 /** ffmpeg may read a granted source or a temp file this process just materialized. */
 async function assertExportInput(filePath: string): Promise<string> {
   const canonical = canonicalizePath(filePath);
   const allowed = fileGrants.hasRead(canonical) || isTempExportSource(canonical);
-  if (!allowed) {
+  // Temp export copies are outside the proxy cache. Proxies are never a master.
+  if (!isTempExportSource(canonical)) {
+    assertExportSourceAllowed(canonical, proxyCacheRoot(), allowed);
+  } else if (!allowed) {
     throw new Error('Refusing to read a video that was not opened in EditPro');
   }
   const info = await fs.lstat(canonical);
@@ -450,6 +498,29 @@ ipcMain.handle('export:materializeSource', async (event, fileName: unknown, byte
   await fs.writeFile(dest, view);
   fileGrants.grantRead(dest, { ephemeral: true });
   return dest;
+});
+
+let encoderList: Promise<string[]> | null = null;
+
+/** Hardware and software encoders this ffmpeg build can use. */
+ipcMain.handle('export:encoders', async (event) => {
+  assertTrustedIpcSender(event);
+  if (!encoderList) {
+    encoderList = (async () => {
+      try {
+        const ffmpegPath = locateFfmpegBinary({
+          packaged: app.isPackaged,
+          platform: process.platform,
+          resourcesPath: process.resourcesPath,
+        });
+        await ensureFfmpegExecutable(ffmpegPath, process.platform);
+        return await probeEncoders(ffmpegPath);
+      } catch {
+        return [];
+      }
+    })();
+  }
+  return encoderList;
 });
 
 /** Encode the edit with the bundled ffmpeg binary. Progress arrives on `export:event`. */
@@ -942,7 +1013,15 @@ function buildApplicationMenu() {
           {
             label: 'EditPro',
             submenu: [
-              { role: 'about', label: 'About EditPro' },
+              {
+                label: 'About EditPro',
+                click: () => mainWindow?.webContents.send('menu:about'),
+              },
+              {
+                label: 'Settings…',
+                accelerator: 'CmdOrCtrl+,',
+                click: () => mainWindow?.webContents.send('menu:settings'),
+              },
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
@@ -1059,6 +1138,37 @@ function buildApplicationMenu() {
     {
       role: 'help' as const,
       submenu: [
+        {
+          label: 'Check for Updates…',
+          click: () => {
+            void desktop?.checkForUpdates(true);
+          },
+        },
+        ...(!isMac
+          ? ([
+              {
+                label: 'Settings…',
+                accelerator: 'CmdOrCtrl+,',
+                click: () => mainWindow?.webContents.send('menu:settings'),
+              },
+            ] as Electron.MenuItemConstructorOptions[])
+          : []),
+        { type: 'separator' },
+        {
+          label: 'Open Log File',
+          click: () => {
+            void desktop?.openLogFile();
+          },
+        },
+        { type: 'separator' },
+        ...(!isMac
+          ? ([
+              {
+                label: 'About EditPro',
+                click: () => mainWindow?.webContents.send('menu:about'),
+              },
+            ] as Electron.MenuItemConstructorOptions[])
+          : []),
         {
           label: 'Learn More',
           click: () => {

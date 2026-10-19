@@ -3,6 +3,7 @@
  * Available in renderer as `window.editpro`.
  */
 import type { ExportJob } from '../../electron/export/plan';
+import type { AppPreferences, PreferencePatch, UpdateDialogState } from '../../electron/updates/policy';
 import type { RecoveryOffer } from '../utils/sessionStore';
 
 export interface VideoExportEvent {
@@ -22,6 +23,40 @@ export interface VideoExportResult {
   message?: string;
 }
 
+export type PlaybackScale = 'full' | 'half' | 'quarter';
+
+export interface ProxyPlaybackEvent {
+  jobId: string;
+  sourcePath: string;
+  scale: PlaybackScale;
+  type: 'progress' | 'done' | 'cancelled' | 'error';
+  percent?: number;
+  mediaUrl?: string;
+  width?: number;
+  height?: number;
+  fps?: number;
+  durationSec?: number;
+  message?: string;
+}
+
+export interface ProxyStartResult {
+  jobId: string;
+  status: 'ready' | 'started' | 'cancelled' | 'error';
+  mediaUrl: string | null;
+  width: number;
+  height: number;
+  fps: number;
+  durationSec: number;
+  message?: string;
+}
+
+export interface DecodeInfo {
+  videoDecode: string;
+  hardware: boolean;
+  label: string;
+  platform: string;
+}
+
 export type EditProMenuChannel =
   | 'menu:openProject'
   | 'menu:openImage'
@@ -31,7 +66,15 @@ export type EditProMenuChannel =
   | 'menu:export'
   | 'menu:undo'
   | 'menu:redo'
-  | 'menu:resetAdjustments';
+  | 'menu:resetAdjustments'
+  | 'menu:settings'
+  | 'menu:about';
+
+export interface ClientErrorReport {
+  message: string;
+  stack?: string;
+  source?: string;
+}
 
 export interface EditProBridge {
   openImage(): Promise<string[] | null>;
@@ -43,6 +86,7 @@ export interface EditProBridge {
   getPathForFile(file: File): string;
   materializeVideoSource(fileName: string, bytes: ArrayBuffer): Promise<string>;
   startVideoExport(request: ExportJob): Promise<VideoExportResult>;
+  listVideoEncoders?(): Promise<string[]>;
   cancelVideoExport(jobId: string): Promise<boolean>;
   onExportEvent(listener: (event: VideoExportEvent) => void): () => void;
   showItemInFolder(filePath: string): Promise<boolean>;
@@ -58,9 +102,25 @@ export interface EditProBridge {
   noteSaved(projectPath: string): Promise<boolean>;
   discardRecovery(): Promise<boolean>;
   markCleanShutdown(): Promise<boolean>;
+  getDecodeInfo(): Promise<DecodeInfo>;
+  startProxy(request: { sourcePath: string; scale: PlaybackScale }): Promise<ProxyStartResult>;
+  cancelProxy(jobId: string): Promise<boolean>;
+  onProxyEvent(listener: (event: ProxyPlaybackEvent) => void): () => void;
   getVersion(): Promise<string>;
   getPlatform(): Promise<string>;
+  openExternal(url: string): Promise<boolean>;
   onMenu(channel: EditProMenuChannel, listener: () => void): () => void;
+  getPreferences(): Promise<AppPreferences>;
+  setPreferences(patch: PreferencePatch): Promise<AppPreferences>;
+  getUpdateState(): Promise<UpdateDialogState>;
+  onUpdateState(listener: (dialog: UpdateDialogState) => void): () => void;
+  checkForUpdates(): Promise<void>;
+  downloadUpdate(): Promise<boolean>;
+  installUpdate(): Promise<boolean>;
+  skipUpdate(version: string): Promise<boolean>;
+  remindUpdateLater(): Promise<boolean>;
+  dismissUpdate(): Promise<boolean>;
+  recordClientError(report: ClientErrorReport): Promise<boolean>;
 }
 
 declare global {

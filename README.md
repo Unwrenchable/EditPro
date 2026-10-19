@@ -38,6 +38,7 @@ EditPro is an open-source, cross-platform desktop editor built with Electron + R
 - **Linux** — `.AppImage` (universal, no install) and `.deb` (Debian/Ubuntu)
 - **Native file dialogs** — uses OS-native open/save pickers on all platforms
 - **Dark theme** — consistent professional dark UI across all OSes
+- **Updates** — checks GitHub Releases on launch and every four hours. Signed macOS and Windows installs can download and restart from the prompt. Unsigned, portable, and Linux builds open the release page instead.
 
 ---
 
@@ -158,6 +159,18 @@ Release builds in [`.github/workflows/release.yml`](.github/workflows/release.ym
 
 Use either the Apple ID trio or the API-key trio. Linux packages are not signed by these secrets.
 
+### Updates
+
+Packaged builds include an update check:
+
+- **Help → Check for Updates…** looks immediately.
+- Automatic checks run on launch and every four hours. Turn them off in **Settings** (macOS app menu, or Help → Settings on Windows and Linux).
+- A signed macOS app or signed Windows installer can **Download & install**, show download progress, then **Restart to update**. electron-updater uses the GitHub Releases feed (`latest-mac.yml`, `latest.yml`).
+- Unsigned builds, the Windows portable exe, and Linux AppImage or deb packages offer **Download from the website**, which opens the GitHub release. **Remind me later** and **Skip this version** are always available.
+- The release workflow publishes the installers together with `latest*.yml` and blockmap files.
+
+The first launch shows a short welcome. **Help → Open Log File** opens a crash log after you opt in (welcome screen or Settings). Logs stay on the computer. **About EditPro** shows the running version.
+
 ---
 
 ## 🤖 Agent-Tools Integration
@@ -205,7 +218,7 @@ Eight specialist agents are defined in [`.agentx/agents.json`](.agentx/agents.js
 - [ ] RAW file decoding (libraw/dcraw via native module)
 - [ ] Batch photo export
 - [ ] Multi-track video timeline (A/V separation)
-- [ ] Auto-updater (electron-updater)
+- [x] Auto-updater (electron-updater, with a GitHub Releases fallback)
 - [ ] GPU-accelerated processing (WebGL filters)
 - [ ] Plugin system
 

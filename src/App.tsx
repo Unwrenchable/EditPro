@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import TopBar from './components/layout/TopBar';
+import AppChrome from './components/shell/AppChrome';
 import VideoEditor from './components/video/VideoEditor';
 import MagicMovieView from './components/magic/MagicMovieView';
 import PhotoDropZone from './components/photo/PhotoDropZone';
@@ -140,33 +141,6 @@ interface MagicMovieResult {
   plan: MagicMoviePlan;
 }
 
-const RecoveryDialog: React.FC = () => {
-  const { recovery, restoreRecovery, discardRecovery } = useEditorSession();
-  if (!recovery) return null;
-  const when = recovery.savedAt ? new Date(recovery.savedAt).toLocaleString() : null;
-  return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Restore autosave">
-      <div className="modal">
-        <h2 className="modal-title">Restore unsaved work?</h2>
-        <p className="modal-copy">
-          {recovery.kind === 'crash'
-            ? 'EditPro did not shut down cleanly. An autosave of your project is available.'
-            : 'You have unsaved changes from the last session.'}
-          {when ? ` Autosaved ${when}.` : ''}
-        </p>
-        <div className="modal-actions">
-          <button type="button" className="btn-secondary" onClick={() => void discardRecovery()}>
-            Discard
-          </button>
-          <button type="button" className="btn-primary" onClick={() => void restoreRecovery()}>
-            Restore
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const AppFrame: React.FC<{
   mode: EditorMode;
   onModeChange: (mode: EditorMode) => void;
@@ -221,7 +195,7 @@ const AppFrame: React.FC<{
           />
         )}
       </main>
-      <RecoveryDialog />
+      <AppChrome />
     </div>
   );
 };

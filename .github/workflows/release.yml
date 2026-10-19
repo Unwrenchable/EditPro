@@ -123,6 +123,22 @@ jobs:
 
           npm run build:electron && npx electron-builder --${{ matrix.platform }} --publish always
 
+          # electron-builder writes latest.yml / latest-mac.yml / latest-linux.yml
+          # (and blockmaps) next to the installers, then --publish always uploads
+          # them to the GitHub Release. Fail the job if that metadata is missing.
+          case "${{ matrix.platform }}" in
+            mac) metadata="release/latest-mac.yml" ;;
+            win) metadata="release/latest.yml" ;;
+            linux) metadata="release/latest-linux.yml" ;;
+            *) echo "Unknown platform"; exit 1 ;;
+          esac
+          if [ ! -f "${metadata}" ]; then
+            echo "electron-builder did not generate ${metadata}"
+            ls -la release || true
+            exit 1
+          fi
+          echo "Update metadata: ${metadata}"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -133,4 +149,7 @@ jobs:
             release/*.exe
             release/*.AppImage
             release/*.deb
+            release/*.yml
+            release/*.blockmap
+            release/latest-mac.json
           if-no-files-found: ignore

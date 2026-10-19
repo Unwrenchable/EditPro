@@ -29,7 +29,44 @@ import {
   type HistoryState,
 } from '../utils/history';
 import { fileMediaPath, revokeIfBlob } from '../utils/mediaFiles';
+import { monitorLinearGain, type CreativeState } from '../utils/video/creative';
+import { removeKeyframe, sampleEffect, updateKeyframe, upsertKeyframe } from '../utils/video/keyframes';
 import { clamp } from '../utils/videoUtils';
+import {
+  advancePlaybackClock,
+  createPlaybackClock,
+  frameBoundary,
+  presentationTimeForBoundary,
+  readElementFps,
+  resetPlaybackClock,
+  seekFrameTime,
+  shouldReseekOnPause,
+  stepFrameTime,
+  subscribePresentedFrames,
+  transportPause,
+  transportPlay,
+  transportPlayResolved,
+} from '../playback/frameClock';
+import {
+  clipAtPlayhead,
+  createTimelineId,
+  liftDelete,
+  linkPair,
+  markClipRange,
+  moveClipTo,
+  razorAtTime,
+  rippleDelete,
+  rippleTrimTo,
+  rippleTrimToPlayhead,
+  rollTo,
+  slideTo,
+  slipTo,
+  splitClip as splitClipEdit,
+  toggleLink,
+  trimEdgeTo,
+  unlinkClip,
+} from '../utils/video/timelineEdit';
+import type { ClipKeyframe } from '../types';
 
 interface VideoModel {
   file: File | null;
@@ -41,6 +78,7 @@ interface VideoModel {
   currentTime: number;
   isPlaying: boolean;
   timelineZoom: number;
+  shuttle: number;
   history: HistoryState<VideoEditSnapshot>;
   revision: number;
 }
@@ -56,9 +94,20 @@ function createVideoModel(): VideoModel {
     currentTime: 0,
     isPlaying: false,
     timelineZoom: 1,
+    shuttle: 0,
     history: createHistory(createDefaultVideoEdits()),
     revision: 0,
   };
+}
+
+function nextShuttle(current: number, direction: 1 | -1, slow: boolean): number {
+  const start = slow ? 0.25 : 1;
+  if (direction > 0) {
+    if (current < start) return start;
+    return Math.min(8, current * 2);
+  }
+  if (current > -start) return -start;
+  return Math.max(-8, current * 2);
 }
 
 function commitVideo(
@@ -70,6 +119,52 @@ function commitVideo(
   const history = commit(model.history, next, coalesceKey ? { coalesceKey } : undefined);
   if (history === model.history) return model;
   return { ...model, history, revision: model.revision + 1 };
+}
+
+/** Keep titles, mixer fades, and transitions attached when clips are split or removed. */
+function reconcileCreative(
+  creative: CreativeState,
+  before: readonly TimelineClip[],
+  after: readonly TimelineClip[],
+): CreativeState {
+  const beforeIds = new Set(before.map((clip) => clip.id));
+  const afterIds = new Set(after.map((clip) => clip.id));
+  const removed = new Set([...beforeIds].filter((id) => !afterIds.has(id)));
+  const added = after.filter((clip) => !beforeIds.has(clip.id));
+  const splitLeft = new Set<string>();
+  let clipAudio = creative.clipAudio.filter((audio) => afterIds.has(audio.clipId));
+  for (const right of added) {
+    const left = after.find((clip) =>
+      clip.id !== right.id &&
+      beforeIds.has(clip.id) &&
+      clip.src === right.src &&
+      clip.trackId === right.trackId &&
+      Math.abs(clip.endTime - right.startTime) < 1e-3 &&
+      Math.abs(clip.outPoint - right.inPoint) < 1e-3,
+    );
+    if (!left) continue;
+    splitLeft.add(left.id);
+    const existing = creative.clipAudio.find((audio) => audio.clipId === left.id);
+    if (existing && !clipAudio.some((audio) => audio.clipId === right.id)) {
+      clipAudio = [...clipAudio, { ...existing, clipId: right.id, keyframes: [], fadeIn: 0 }];
+    }
+  }
+  const transitions = creative.transitions.filter((item) => {
+    if (removed.has(item.outgoingClipId) || removed.has(item.incomingClipId)) return false;
+    if (splitLeft.has(item.outgoingClipId) || splitLeft.has(item.incomingClipId)) return false;
+    const outgoingOk = item.outgoingClipId === 'program' || afterIds.has(item.outgoingClipId);
+    const incomingOk = item.incomingClipId === 'program' || afterIds.has(item.incomingClipId);
+    return outgoingOk && incomingOk;
+  });
+  return { ...creative, clipAudio, transitions };
+}
+
+function withClipEdit(
+  snap: VideoEditSnapshot,
+  edit: (clips: TimelineClip[]) => TimelineClip[],
+): VideoEditSnapshot {
+  const clips = edit(snap.clips);
+  return { ...snap, clips, creative: reconcileCreative(snap.creative, snap.clips, clips) };
 }
 
 function toVideoState(model: VideoModel): VideoEditorState {
@@ -95,7 +190,11 @@ function toVideoState(model: VideoModel): VideoEditorState {
     timelineZoom: model.timelineZoom,
     tracks: snap.tracks,
     clips: snap.clips,
+    snapping: snap.snapping,
+    programKeyframes: snap.programKeyframes,
+    shuttleRate: model.shuttle,
     transition: snap.transition,
+    creative: snap.creative,
     sourcePath: model.mediaPath,
   };
 }
@@ -109,6 +208,7 @@ function toVideoState(model: VideoModel): VideoEditorState {
 export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   const [model, setModel] = useState<VideoModel>(createVideoModel);
   const modelRef = useRef(model);
+  const clockRef = useRef(createPlaybackClock());
 
   useEffect(() => {
     modelRef.current = model;
@@ -120,10 +220,27 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (video.playbackRate !== present.playbackRate) video.playbackRate = present.playbackRate;
-    if (video.volume !== present.volume) video.volume = present.volume;
+    if (modelRef.current.shuttle === 0 && video.playbackRate !== present.playbackRate) {
+      video.playbackRate = present.playbackRate;
+    }
+    const playheadClip = clipAtPlayhead(present.clips, present.tracks, model.currentTime);
+    const useClip = Boolean(playheadClip?.keyframes && playheadClip.keyframes.length > 0);
+    const keys = useClip ? playheadClip?.keyframes : present.programKeyframes;
+    const keyTime = useClip && playheadClip ? model.currentTime - playheadClip.startTime : model.currentTime;
+    const keyframedVolume = sampleEffect(keys, 'volume', keyTime);
+    const monitor = Math.min(1, monitorLinearGain({
+      master: present.volume,
+      muted: present.isMuted,
+      tracks: present.tracks,
+      creative: present.creative,
+      sourceTime: model.currentTime,
+      trimStart: present.trimStart,
+      trimEnd: present.trimEnd,
+      playbackRate: present.playbackRate,
+    }) * (keyframedVolume === null ? 1 : keyframedVolume));
+    if (video.volume !== monitor) video.volume = monitor;
     if (video.muted !== present.isMuted) video.muted = present.isMuted;
-  }, [present.playbackRate, present.volume, present.isMuted, model.videoUrl, videoRef]);
+  }, [present, model.currentTime, model.videoUrl, videoRef]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -133,6 +250,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   }, [present.trimStart, present.trimEnd, model.videoUrl, videoRef]);
 
   const loadVideo = useCallback((file: File, mediaPath?: string | null) => {
+    resetPlaybackClock(clockRef.current);
     const url = URL.createObjectURL(file);
     const explicit = mediaPath === undefined || mediaPath === null || mediaPath === '' ? fileMediaPath(file) : mediaPath;
     setModel((prev) => {
@@ -148,9 +266,134 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     });
   }, []);
 
+  const handlePresented = useCallback((video: HTMLVideoElement, mediaTime: number) => {
+    const clock = clockRef.current;
+    const present = modelRef.current.history.present;
+    const fps = readElementFps(video);
+    if (present.trimEnd > 0 && mediaTime >= present.trimEnd - 1e-3) {
+      clock.stopFrames();
+      clock.usingFrameCallback = false;
+      clock.transport = transportPause(clock.transport);
+      video.pause();
+      const duration = video.duration || present.trimEnd;
+      const boundary = seekFrameTime(present.trimStart, fps, duration);
+      video.currentTime = presentationTimeForBoundary(boundary, fps, duration);
+      clock.presentedMediaTime = boundary;
+      setModel((prev) => ({ ...prev, currentTime: boundary, isPlaying: false }));
+      return;
+    }
+    const decision = advancePlaybackClock(clock.drop, mediaTime, 1 / fps);
+    clock.drop = { mediaTime: decision.mediaTime, dropped: decision.dropped, primed: decision.primed };
+    clock.presentedMediaTime = decision.mediaTime;
+    const boundary = frameBoundary(decision.mediaTime, fps);
+    setModel((prev) => (prev.currentTime === boundary ? prev : { ...prev, currentTime: boundary }));
+  }, []);
+
+  const watchFrames = useCallback((video: HTMLVideoElement, generation: number) => {
+    const clock = clockRef.current;
+    clock.stopFrames();
+    clock.stopFrames = subscribePresentedFrames(
+      video,
+      generation,
+      () => clock.transport.generation,
+      (mediaTime) => handlePresented(video, mediaTime),
+    );
+    clock.usingFrameCallback = typeof video.requestVideoFrameCallback === 'function';
+  }, [handlePresented]);
+
+  // J/K/L shuttle is transport, not an undo step. Reverse playback steps the
+  // element because HTML media cannot play a negative rate. Forward shuttle
+  // uses the same play generation as the program monitor so a late play()
+  // cannot restart the decoder after stop.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || model.shuttle === 0) return;
+    const clock = clockRef.current;
+    if (model.shuttle > 0) {
+      video.playbackRate = model.shuttle;
+      const begun = transportPlay(clock.transport);
+      clock.transport = begun.state;
+      const generation = begun.generation;
+      void Promise.resolve(video.play()).then(() => {
+        if (clock.transport.generation !== generation) {
+          if (!clock.transport.playing) video.pause();
+          return;
+        }
+        clock.transport = transportPlayResolved(clock.transport, generation);
+        if (!clock.transport.elementShouldPlay) {
+          video.pause();
+          return;
+        }
+        watchFrames(video, generation);
+      }).catch(() => {
+        if (clock.transport.generation !== generation) return;
+        clock.transport = transportPause(clock.transport);
+      });
+      return () => {
+        video.playbackRate = modelRef.current.history.present.playbackRate;
+      };
+    }
+    clock.stopFrames();
+    clock.usingFrameCallback = false;
+    clock.transport = transportPause(clock.transport);
+    video.pause();
+    let frame = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const current = videoRef.current;
+      if (!current) return;
+      const rate = modelRef.current.shuttle;
+      if (rate >= 0) return;
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      const next = Math.max(0, current.currentTime + rate * dt);
+      current.currentTime = next;
+      setModel((prev) => ({
+        ...prev,
+        currentTime: next,
+        isPlaying: false,
+        shuttle: next <= 0 ? 0 : prev.shuttle,
+      }));
+      if (next > 0) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [model.shuttle, videoRef, watchFrames]);
+
   const onLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
+    if (video.dataset?.previewSwap === '1') {
+      const resume = Number(video.dataset.resumeTime ?? '0');
+      delete video.dataset.previewSwap;
+      delete video.dataset.resumeTime;
+      const fps = readElementFps(video);
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      if (Number.isFinite(resume) && resume > 0 && duration > 0) {
+        const boundary = seekFrameTime(resume, fps, duration);
+        video.currentTime = presentationTimeForBoundary(boundary, fps, duration);
+        clockRef.current.presentedMediaTime = boundary;
+        setModel((prev) => ({ ...prev, currentTime: boundary }));
+      }
+      if (modelRef.current.isPlaying) {
+        const begun = transportPlay(clockRef.current.transport);
+        clockRef.current.transport = begun.state;
+        void Promise.resolve(video.play()).then(() => {
+          const resolved = transportPlayResolved(clockRef.current.transport, begun.generation);
+          clockRef.current.transport = resolved;
+          if (!resolved.elementShouldPlay) {
+            video.pause();
+            return;
+          }
+          watchFrames(video, begun.generation);
+        }).catch(() => {
+          if (clockRef.current.transport.generation !== begun.generation) return;
+          clockRef.current.transport = transportPause(clockRef.current.transport);
+          setModel((prev) => ({ ...prev, isPlaying: false }));
+        });
+      }
+      return;
+    }
     const duration = video.duration;
     setModel((prev) => {
       const snap = prev.history.present;
@@ -166,19 +409,31 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
         revision: history !== prev.history && !pristine ? prev.revision + 1 : prev.revision,
       };
     });
-  }, [videoRef]);
+  }, [videoRef, watchFrames]);
 
   const onTimeUpdate = useCallback(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || video.dataset?.previewSwap === '1') return;
     setModel((prev) => {
       const { trimStart, trimEnd } = prev.history.present;
-      if (video.currentTime >= trimEnd) {
+      if (trimEnd > 0 && video.currentTime >= trimEnd) {
+        const clock = clockRef.current;
+        clock.stopFrames();
+        clock.usingFrameCallback = false;
+        clock.transport = transportPause(clock.transport);
         video.pause();
-        video.currentTime = trimStart;
-        return { ...prev, currentTime: trimStart, isPlaying: false };
+        const fps = readElementFps(video);
+        const boundary = seekFrameTime(trimStart, fps, video.duration || trimEnd);
+        video.currentTime = presentationTimeForBoundary(boundary, fps, video.duration || 0);
+        clock.presentedMediaTime = boundary;
+        return { ...prev, currentTime: boundary, isPlaying: false };
       }
-      return { ...prev, currentTime: video.currentTime };
+      if (!prev.isPlaying || clockRef.current.usingFrameCallback) return prev;
+      const fps = readElementFps(video);
+      clockRef.current.presentedMediaTime = video.currentTime;
+      const boundary = frameBoundary(video.currentTime, fps);
+      if (boundary === prev.currentTime) return prev;
+      return { ...prev, currentTime: boundary };
     });
   }, [videoRef]);
 
@@ -186,18 +441,57 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     (trimStart: number, trimEnd: number) => {
       const video = videoRef.current;
       if (!video) return;
-      if (video.currentTime >= trimEnd) video.currentTime = trimStart;
-      void video.play();
-      setModel((prev) => ({ ...prev, isPlaying: true }));
+      const clock = clockRef.current;
+      const fps = readElementFps(video);
+      const duration = video.duration || 0;
+      if (trimEnd > 0 && video.currentTime >= trimEnd - 1e-3) {
+        const boundary = seekFrameTime(trimStart, fps, duration || trimEnd);
+        video.currentTime = presentationTimeForBoundary(boundary, fps, duration);
+        clock.presentedMediaTime = boundary;
+      } else {
+        clock.presentedMediaTime = frameBoundary(video.currentTime, fps);
+      }
+      clock.drop = { mediaTime: clock.presentedMediaTime, dropped: clock.drop.dropped, primed: false };
+      const begun = transportPlay(clock.transport);
+      clock.transport = begun.state;
+      setModel((prev) => ({ ...prev, isPlaying: true, shuttle: 0 }));
+      const generation = begun.generation;
+      void Promise.resolve(video.play()).then(() => {
+        if (clock.transport.generation !== generation) {
+          if (!clock.transport.playing) video.pause();
+          return;
+        }
+        clock.transport = transportPlayResolved(clock.transport, generation);
+        if (!clock.transport.elementShouldPlay) {
+          video.pause();
+          return;
+        }
+        watchFrames(video, generation);
+      }).catch(() => {
+        if (clock.transport.generation !== generation) return;
+        clock.transport = transportPause(clock.transport);
+        setModel((prev) => ({ ...prev, isPlaying: false }));
+      });
     },
-    [videoRef],
+    [videoRef, watchFrames],
   );
 
   const pause = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
+    const clock = clockRef.current;
+    clock.stopFrames();
+    clock.usingFrameCallback = false;
+    clock.transport = transportPause(clock.transport);
     video.pause();
-    setModel((prev) => ({ ...prev, isPlaying: false }));
+    const fps = readElementFps(video);
+    const boundary = frameBoundary(clock.presentedMediaTime || video.currentTime, fps);
+    clock.presentedMediaTime = boundary;
+    const duration = video.duration || 0;
+    if (shouldReseekOnPause(video.currentTime, boundary, fps)) {
+      video.currentTime = presentationTimeForBoundary(boundary, fps, duration);
+    }
+    setModel((prev) => ({ ...prev, isPlaying: false, currentTime: boundary, shuttle: 0 }));
   }, [videoRef]);
 
   const togglePlay = useCallback(
@@ -212,9 +506,14 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     (time: number) => {
       const video = videoRef.current;
       if (!video) return;
-      const clamped = clamp(time, 0, video.duration || 0);
-      video.currentTime = clamped;
-      setModel((prev) => ({ ...prev, currentTime: clamped }));
+      const fps = readElementFps(video);
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+      const boundary = seekFrameTime(Math.min(Math.max(0, time), duration), fps, duration);
+      video.currentTime = presentationTimeForBoundary(boundary, fps, duration);
+      const clock = clockRef.current;
+      clock.presentedMediaTime = boundary;
+      clock.drop = { mediaTime: boundary, dropped: clock.drop.dropped, primed: false };
+      setModel((prev) => ({ ...prev, currentTime: boundary, shuttle: 0 }));
     },
     [videoRef],
   );
@@ -223,10 +522,14 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     (direction: 1 | -1) => {
       const video = videoRef.current;
       if (!video) return;
-      const frameDuration = 1 / 30;
-      const next = clamp(video.currentTime + direction * frameDuration, 0, video.duration || 0);
-      video.currentTime = next;
-      setModel((prev) => ({ ...prev, currentTime: next }));
+      const fps = readElementFps(video);
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+      const boundary = stepFrameTime(video.currentTime, direction, fps, duration);
+      video.currentTime = presentationTimeForBoundary(boundary, fps, duration);
+      const clock = clockRef.current;
+      clock.presentedMediaTime = boundary;
+      clock.drop = { mediaTime: boundary, dropped: clock.drop.dropped, primed: false };
+      setModel((prev) => ({ ...prev, currentTime: boundary, shuttle: 0 }));
     },
     [videoRef],
   );
@@ -235,9 +538,14 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     (seconds: number) => {
       const video = videoRef.current;
       if (!video) return;
-      const next = clamp(video.currentTime + seconds, 0, video.duration || 0);
-      video.currentTime = next;
-      setModel((prev) => ({ ...prev, currentTime: next }));
+      const fps = readElementFps(video);
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+      const boundary = seekFrameTime(clamp(video.currentTime + seconds, 0, duration), fps, duration);
+      video.currentTime = presentationTimeForBoundary(boundary, fps, duration);
+      const clock = clockRef.current;
+      clock.presentedMediaTime = boundary;
+      clock.drop = { mediaTime: boundary, dropped: clock.drop.dropped, primed: false };
+      setModel((prev) => ({ ...prev, currentTime: boundary, shuttle: 0 }));
     },
     [videoRef],
   );
@@ -423,11 +731,23 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
 
   const removeTrack = useCallback((trackId: string) => {
     setModel((prev) =>
-      commitVideo(prev, (snap) => ({
-        ...snap,
-        tracks: snap.tracks.filter((t) => t.id !== trackId),
-        clips: snap.clips.filter((c) => c.trackId !== trackId),
-      })),
+      commitVideo(prev, (snap) => {
+        const clips = snap.clips.filter((c) => c.trackId !== trackId);
+        const clipIds = new Set(clips.map((clip) => clip.id));
+        return {
+          ...snap,
+          tracks: snap.tracks.filter((t) => t.id !== trackId),
+          clips,
+          creative: {
+            ...snap.creative,
+            trackMix: snap.creative.trackMix.filter((mix) => mix.trackId !== trackId),
+            titles: snap.creative.titles.filter((title) => title.trackId !== trackId),
+            clipAudio: snap.creative.clipAudio.filter((audio) => clipIds.has(audio.clipId)),
+            transitions: snap.creative.transitions.filter((item) =>
+              clipIds.has(item.outgoingClipId) && clipIds.has(item.incomingClipId)),
+          },
+        };
+      }),
     );
   }, []);
 
@@ -438,62 +758,230 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
         if (!track || track.locked) return snap;
         const clipDuration = outPoint - inPoint;
         const clip: TimelineClip = {
-          id: `clip_${Date.now()}`,
+          id: createTimelineId('clip'),
           src,
           trackId,
           startTime,
           endTime: startTime + clipDuration,
           inPoint,
           outPoint,
+          linkId: null,
+          keyframes: [],
         };
         return { ...snap, clips: [...snap.clips, clip] };
       }),
     );
   }, []);
 
-  const moveClip = useCallback((clipId: string, newTrackId: string, newStartTime: number) => {
+  const moveClip = useCallback((clipId: string, newTrackId: string, newStartTime: number, coalesceKey?: string) => {
     setModel((prev) =>
-      commitVideo(prev, (snap) => {
-        const clip = snap.clips.find((c) => c.id === clipId);
-        const targetTrack = snap.tracks.find((t) => t.id === newTrackId);
-        if (!clip || !targetTrack || targetTrack.locked) return snap;
-        const duration = clip.endTime - clip.startTime;
-        return {
-          ...snap,
-          clips: snap.clips.map((c) =>
-            c.id === clipId
-              ? { ...c, trackId: newTrackId, startTime: newStartTime, endTime: newStartTime + duration }
-              : c,
-          ),
-        };
-      }),
+      commitVideo(
+        prev,
+        (snap) => ({ ...snap, clips: moveClipTo(snap.clips, snap.tracks, clipId, newTrackId, newStartTime) }),
+        coalesceKey,
+      ),
     );
   }, []);
 
   const splitClip = useCallback((clipId: string, atTime: number) => {
     setModel((prev) =>
-      commitVideo(prev, (snap) => {
-        const clip = snap.clips.find((c) => c.id === clipId);
-        if (!clip) return snap;
-        if (atTime <= clip.startTime || atTime >= clip.endTime) return snap;
-        const splitOffset = atTime - clip.startTime;
-        const firstHalf: TimelineClip = { ...clip, endTime: atTime, outPoint: clip.inPoint + splitOffset };
-        const secondHalf: TimelineClip = {
-          ...clip,
-          id: `clip_${Date.now()}`,
-          startTime: atTime,
-          inPoint: clip.inPoint + splitOffset,
-        };
-        return {
-          ...snap,
-          clips: snap.clips.map((c) => (c.id === clipId ? firstHalf : c)).concat(secondHalf),
-        };
-      }),
+      commitVideo(prev, (snap) => withClipEdit(snap, (clips) => splitClipEdit(clips, snap.tracks, clipId, atTime))),
+    );
+  }, []);
+
+  const razorAt = useCallback((atTime: number) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => withClipEdit(snap, (clips) => razorAtTime(clips, snap.tracks, atTime))),
     );
   }, []);
 
   const deleteClip = useCallback((clipId: string) => {
-    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, clips: snap.clips.filter((c) => c.id !== clipId) })));
+    setModel((prev) =>
+      commitVideo(prev, (snap) => withClipEdit(snap, (clips) => liftDelete(clips, snap.tracks, [clipId]))),
+    );
+  }, []);
+
+  const rippleDeleteClip = useCallback((clipId: string) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => withClipEdit(snap, (clips) => rippleDelete(clips, snap.tracks, [clipId]))),
+    );
+  }, []);
+
+  const trimClip = useCallback((clipId: string, edge: 'in' | 'out', time: number, coalesceKey?: string) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({ ...snap, clips: trimEdgeTo(snap.clips, snap.tracks, clipId, edge, time) }), coalesceKey),
+    );
+  }, []);
+
+  const rippleTrimClip = useCallback((clipId: string, edge: 'in' | 'out', value: number, coalesceKey?: string) => {
+    setModel((prev) =>
+      commitVideo(
+        prev,
+        (snap) => ({ ...snap, clips: rippleTrimTo(snap.clips, snap.tracks, clipId, edge, value) }),
+        coalesceKey,
+      ),
+    );
+  }, []);
+
+  const rollClip = useCallback((clipId: string, edge: 'in' | 'out', cutTime: number, coalesceKey?: string) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({ ...snap, clips: rollTo(snap.clips, snap.tracks, clipId, edge, cutTime) }), coalesceKey),
+    );
+  }, []);
+
+  const slipClip = useCallback((clipId: string, newInPoint: number, coalesceKey?: string) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({ ...snap, clips: slipTo(snap.clips, snap.tracks, clipId, newInPoint) }), coalesceKey),
+    );
+  }, []);
+
+  const slideClip = useCallback((clipId: string, newStart: number, coalesceKey?: string) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({ ...snap, clips: slideTo(snap.clips, snap.tracks, clipId, newStart) }), coalesceKey),
+    );
+  }, []);
+
+  const linkClips = useCallback((idA: string, idB: string) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({ ...snap, clips: linkPair(snap.clips, idA, idB, createTimelineId('link')) })),
+    );
+  }, []);
+
+  const unlinkClips = useCallback((clipId: string) => {
+    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, clips: unlinkClip(snap.clips, clipId) })));
+  }, []);
+
+  const toggleClipLink = useCallback((selectedId: string | null, playhead: number) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({
+        ...snap,
+        clips: toggleLink(snap.clips, selectedId, playhead, snap.tracks, createTimelineId('link')),
+      })),
+    );
+  }, []);
+
+  const rippleToPlayhead = useCallback((edge: 'previous' | 'next', time: number) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({ ...snap, clips: rippleTrimToPlayhead(snap.clips, snap.tracks, time, edge) })),
+    );
+  }, []);
+
+  const setSnapping = useCallback((snapping: boolean) => {
+    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, snapping })));
+  }, []);
+
+  const clearInOut = useCallback((duration: number) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({
+        ...snap,
+        trimStart: 0,
+        trimEnd: duration > 0 ? duration : snap.trimEnd,
+      })),
+    );
+  }, []);
+
+  const markInOut = useCallback((start: number, end: number) => {
+    const trimStart = clamp(Math.min(start, end), 0, Math.max(0, end - 0.1));
+    const trimEnd = Math.max(trimStart + 0.1, end);
+    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, trimStart, trimEnd })));
+  }, []);
+
+  const markClipAt = useCallback((time: number) => {
+    setModel((prev) => {
+      const range = markClipRange(prev.history.present.clips, prev.history.present.tracks, time);
+      if (!range) return prev;
+      return commitVideo(prev, (snap) => ({ ...snap, trimStart: range.start, trimEnd: Math.max(range.start + 0.1, range.end) }));
+    });
+  }, []);
+
+  const shuttleForward = useCallback((slow = false) => {
+    setModel((prev) => ({ ...prev, shuttle: nextShuttle(prev.shuttle, 1, slow), isPlaying: true }));
+  }, []);
+
+  const shuttleReverse = useCallback((slow = false) => {
+    setModel((prev) => ({ ...prev, shuttle: nextShuttle(prev.shuttle, -1, slow), isPlaying: false }));
+  }, []);
+
+  const shuttleStop = useCallback(() => {
+    const video = videoRef.current;
+    const clock = clockRef.current;
+    clock.stopFrames();
+    clock.usingFrameCallback = false;
+    clock.transport = transportPause(clock.transport);
+    if (video) {
+      video.pause();
+      video.playbackRate = modelRef.current.history.present.playbackRate;
+    }
+    setModel((prev) => (prev.shuttle === 0 && !prev.isPlaying ? prev : { ...prev, shuttle: 0, isPlaying: false }));
+  }, [videoRef]);
+
+  const addClipKeyframe = useCallback((clipId: string, keyframe: ClipKeyframe) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({
+        ...snap,
+        clips: snap.clips.map((clip) =>
+          clip.id === clipId ? { ...clip, keyframes: upsertKeyframe(clip.keyframes ?? [], keyframe) } : clip,
+        ),
+      })),
+    );
+  }, []);
+
+  const updateClipKeyframe = useCallback(
+    (clipId: string, keyframeId: string, patch: Partial<Pick<ClipKeyframe, 'time' | 'value' | 'easing'>>, coalesceKey?: string) => {
+      setModel((prev) =>
+        commitVideo(
+          prev,
+          (snap) => ({
+            ...snap,
+            clips: snap.clips.map((clip) =>
+              clip.id === clipId ? { ...clip, keyframes: updateKeyframe(clip.keyframes ?? [], keyframeId, patch) } : clip,
+            ),
+          }),
+          coalesceKey,
+        ),
+      );
+    },
+    [],
+  );
+
+  const removeClipKeyframe = useCallback((clipId: string, keyframeId: string) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({
+        ...snap,
+        clips: snap.clips.map((clip) =>
+          clip.id === clipId ? { ...clip, keyframes: removeKeyframe(clip.keyframes ?? [], keyframeId) } : clip,
+        ),
+      })),
+    );
+  }, []);
+
+  const addProgramKeyframe = useCallback((keyframe: ClipKeyframe) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({ ...snap, programKeyframes: upsertKeyframe(snap.programKeyframes, keyframe) })),
+    );
+  }, []);
+
+  const updateProgramKeyframe = useCallback(
+    (keyframeId: string, patch: Partial<Pick<ClipKeyframe, 'time' | 'value' | 'easing'>>, coalesceKey?: string) => {
+      setModel((prev) =>
+        commitVideo(
+          prev,
+          (snap) => ({ ...snap, programKeyframes: updateKeyframe(snap.programKeyframes, keyframeId, patch) }),
+          coalesceKey,
+        ),
+      );
+    },
+    [],
+  );
+
+  const removeProgramKeyframe = useCallback((keyframeId: string) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => ({ ...snap, programKeyframes: removeKeyframe(snap.programKeyframes, keyframeId) })),
+    );
+  }, []);
+
+  const setCreative = useCallback((creative: CreativeState, coalesceKey?: string) => {
+    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, creative }), coalesceKey));
   }, []);
 
   const applyMagicPlan = useCallback(
@@ -524,6 +1012,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   );
 
   const resetVideo = useCallback((videoUrl: string | null) => {
+    resetPlaybackClock(clockRef.current);
     setModel((prev) => {
       revokeIfBlob(videoUrl);
       if (prev.videoUrl && prev.videoUrl !== videoUrl) revokeIfBlob(prev.videoUrl);
@@ -550,6 +1039,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   const getEdits = useCallback((): VideoEditSnapshot => structuredClone(modelRef.current.history.present), []);
 
   const setMedia = useCallback((media: MediaBinding) => {
+    resetPlaybackClock(clockRef.current);
     setModel((prev) => {
       if (prev.videoUrl !== media.url) revokeIfBlob(prev.videoUrl);
       return {
@@ -567,6 +1057,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   }, []);
 
   const restore = useCallback((edits: VideoEditSnapshot, media: MediaBinding | null, timelineZoom?: number) => {
+    resetPlaybackClock(clockRef.current);
     setModel((prev) => {
       if (prev.videoUrl !== media?.url) revokeIfBlob(prev.videoUrl);
       return {
@@ -579,6 +1070,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
         currentTime: 0,
         isPlaying: false,
         timelineZoom: timelineZoom ?? prev.timelineZoom,
+        shuttle: 0,
         history: createHistory(edits),
         revision: prev.revision + 1,
       };
@@ -627,7 +1119,32 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     addClip,
     moveClip,
     splitClip,
+    razorAt,
     deleteClip,
+    rippleDeleteClip,
+    trimClip,
+    rippleTrimClip,
+    rollClip,
+    slipClip,
+    slideClip,
+    linkClips,
+    unlinkClips,
+    toggleClipLink,
+    rippleToPlayhead,
+    setSnapping,
+    clearInOut,
+    markInOut,
+    markClipAt,
+    shuttleForward,
+    shuttleReverse,
+    shuttleStop,
+    addClipKeyframe,
+    updateClipKeyframe,
+    removeClipKeyframe,
+    addProgramKeyframe,
+    updateProgramKeyframe,
+    removeProgramKeyframe,
+    setCreative,
     applyMagicPlan,
     resetVideo,
     undo,

@@ -17,6 +17,31 @@ export interface VideoExportEvent {
   message?: string;
 }
 
+export interface ProxyPlaybackEvent {
+  jobId: string;
+  sourcePath: string;
+  scale: 'full' | 'half' | 'quarter';
+  type: 'progress' | 'done' | 'cancelled' | 'error';
+  percent?: number;
+  mediaUrl?: string;
+  width?: number;
+  height?: number;
+  fps?: number;
+  durationSec?: number;
+  message?: string;
+}
+
+export interface ProxyStartResult {
+  jobId: string;
+  status: 'ready' | 'started' | 'cancelled' | 'error';
+  mediaUrl: string | null;
+  width: number;
+  height: number;
+  fps: number;
+  durationSec: number;
+  message?: string;
+}
+
 const MENU_CHANNELS = [
   'menu:openProject',
   'menu:openImage',
@@ -27,6 +52,8 @@ const MENU_CHANNELS = [
   'menu:undo',
   'menu:redo',
   'menu:resetAdjustments',
+  'menu:settings',
+  'menu:about',
 ] as const;
 type MenuChannel = (typeof MENU_CHANNELS)[number];
 
@@ -85,6 +112,9 @@ contextBridge.exposeInMainWorld('editpro', {
   startVideoExport: (request: unknown): Promise<{ status: 'done' | 'cancelled' | 'error'; outputPath: string; message?: string }> =>
     ipcRenderer.invoke('export:start', request),
 
+  /** Encoder names from `ffmpeg -encoders`, including NVENC, QSV, AMF, and VideoToolbox when present. */
+  listVideoEncoders: (): Promise<string[]> => ipcRenderer.invoke('export:encoders'),
+
   /** Stop an in-progress export. */
   cancelVideoExport: (jobId: string): Promise<boolean> => ipcRenderer.invoke('export:cancel', jobId),
 
@@ -132,11 +162,60 @@ contextBridge.exposeInMainWorld('editpro', {
 
   markCleanShutdown: (): Promise<boolean> => ipcRenderer.invoke('session:markClean'),
 
+  /** GPU video-decode status after hardware-decode switches are applied. */
+  getDecodeInfo: (): Promise<{ videoDecode: string; hardware: boolean; label: string; platform: string }> =>
+    ipcRenderer.invoke('playback:decodeInfo'),
+
+  /**
+   * Build or reuse a low-resolution proxy for a granted source.
+   * Progress and completion arrive on onProxyEvent. Export keeps using the original.
+   */
+  startProxy: (request: { sourcePath: string; scale: 'full' | 'half' | 'quarter' }): Promise<ProxyStartResult> =>
+    ipcRenderer.invoke('playback:startProxy', request),
+
+  cancelProxy: (jobId: string): Promise<boolean> => ipcRenderer.invoke('playback:cancelProxy', jobId),
+
+  onProxyEvent: (listener: (event: ProxyPlaybackEvent) => void): (() => void) => {
+    const wrapped = (_event: unknown, payload: ProxyPlaybackEvent) => listener(payload);
+    ipcRenderer.on('playback:event', wrapped);
+    return () => ipcRenderer.removeListener('playback:event', wrapped);
+  },
+
   /** Returns the current app version string. */
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
 
   /** Returns the OS platform string ('darwin' | 'win32' | 'linux'). */
   getPlatform: (): Promise<string> => ipcRenderer.invoke('app:getPlatform'),
+
+  /** Open an https or mailto URL in the system handler. The main process rejects anything else. */
+  openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('shell:openExternal', url),
+
+  getPreferences: () => ipcRenderer.invoke('prefs:get'),
+
+  setPreferences: (patch: unknown) => ipcRenderer.invoke('prefs:set', patch),
+
+  getUpdateState: () => ipcRenderer.invoke('updates:getState'),
+
+  onUpdateState: (listener: (dialog: unknown) => void) => {
+    if (typeof listener !== 'function') throw new Error('Invalid update subscription');
+    const wrapped = (_event: unknown, payload: unknown) => listener(payload);
+    ipcRenderer.on('updates:state', wrapped);
+    return () => ipcRenderer.removeListener('updates:state', wrapped);
+  },
+
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+
+  downloadUpdate: () => ipcRenderer.invoke('updates:download'),
+
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
+
+  skipUpdate: (version: string) => ipcRenderer.invoke('updates:skip', version),
+
+  remindUpdateLater: () => ipcRenderer.invoke('updates:remind'),
+
+  dismissUpdate: () => ipcRenderer.invoke('updates:dismiss'),
+
+  recordClientError: (report: unknown) => ipcRenderer.invoke('logs:record', report),
 
   /**
    * Listen for menu events sent from the main process.
