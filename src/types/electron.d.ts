@@ -50,6 +50,35 @@ export interface ProxyStartResult {
   message?: string;
 }
 
+export interface ProxyClassification {
+  required: boolean;
+  scale: PlaybackScale;
+  reason: string;
+  width: number;
+  height: number;
+  durationSec: number;
+  videoCodec: string;
+  fileBytes: number;
+}
+
+export interface ProxyCacheEntry {
+  id: string;
+  bytes: number;
+  lastUsedMs: number;
+  partial: boolean;
+  sourceName: string | null;
+  scale: PlaybackScale | null;
+}
+
+export interface ProxyCacheStatus {
+  usedBytes: number;
+  maxBytes: number;
+  auto: boolean;
+  items: number;
+  partials: number;
+  entries: ProxyCacheEntry[];
+}
+
 export interface DecodeInfo {
   videoDecode: string;
   hardware: boolean;
@@ -106,6 +135,11 @@ export interface EditProBridge {
   startProxy(request: { sourcePath: string; scale: PlaybackScale }): Promise<ProxyStartResult>;
   cancelProxy(jobId: string): Promise<boolean>;
   onProxyEvent(listener: (event: ProxyPlaybackEvent) => void): () => void;
+  classifyProxy(sourcePath: string): Promise<ProxyClassification>;
+  getProxyCache(): Promise<ProxyCacheStatus>;
+  setProxyCachePolicy(patch: { maxBytes?: number; auto?: boolean }): Promise<ProxyCacheStatus>;
+  cleanupProxyCache(): Promise<ProxyCacheStatus>;
+  relinkProxyCache(paths: string[]): Promise<{ moved: number; skipped: number; status: ProxyCacheStatus }>;
   getVersion(): Promise<string>;
   getPlatform(): Promise<string>;
   openExternal(url: string): Promise<boolean>;

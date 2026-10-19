@@ -18,6 +18,7 @@ import { DEFAULT_BEZIER, normalizeBezierHandles, type BezierHandles } from '../.
 import { DEFAULT_ADJUSTMENTS } from './imageFilters';
 import { createDefaultCreativeState, normalizeCreativeState, type CreativeState } from './video/creative';
 import { createMotionDocument, normalizeMotionDocument, type MotionDocument } from './video/motionGraphics';
+import { normalizeMulticamSequence, type MulticamSequence } from './video/multicam';
 import { DEFAULT_AUDIO, DEFAULT_LUMETRI } from './videoUtils';
 
 const PHOTO_FILTERS: readonly PhotoFilterName[] = [
@@ -88,6 +89,7 @@ export interface VideoEditSnapshot {
   transition: VideoTransition;
   creative: CreativeState;
   graphics: MotionDocument;
+  multicam: MulticamSequence | null;
 }
 
 export interface MediaBinding {
@@ -134,6 +136,7 @@ export function createDefaultVideoEdits(): VideoEditSnapshot {
     transition: 'cut',
     creative: createDefaultCreativeState(),
     graphics: createMotionDocument(),
+    multicam: null,
   };
 }
 
@@ -319,6 +322,7 @@ export function normalizeVideoEdits(input: unknown): VideoEditSnapshot {
     transition: oneOf(record.transition, TRANSITIONS, 'cut'),
     creative: normalizeCreativeState(record.creative),
     graphics: normalizeMotionDocument(record.graphics),
+    multicam: normalizeMulticamSequence(record.multicam),
   };
 }
 

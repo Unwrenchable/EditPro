@@ -181,6 +181,17 @@ contextBridge.exposeInMainWorld('editpro', {
     return () => ipcRenderer.removeListener('playback:event', wrapped);
   },
 
+  classifyProxy: (sourcePath: string) => ipcRenderer.invoke('playback:classifyProxy', sourcePath),
+
+  getProxyCache: () => ipcRenderer.invoke('playback:cacheStatus'),
+
+  setProxyCachePolicy: (patch: { maxBytes?: number; auto?: boolean }) =>
+    ipcRenderer.invoke('playback:setCachePolicy', patch),
+
+  cleanupProxyCache: () => ipcRenderer.invoke('playback:cleanupCache'),
+
+  relinkProxyCache: (paths: string[]) => ipcRenderer.invoke('playback:relinkCache', paths),
+
   /** Returns the current app version string. */
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
 

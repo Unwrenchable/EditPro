@@ -1,6 +1,7 @@
 import type { CreativeState } from '../utils/video/creative';
 import type { BezierHandles, EaseCurve } from '../../electron/export/easing';
 import type { MotionDocument } from '../utils/video/motionGraphics';
+import type { MulticamSequence } from '../utils/video/multicam';
 
 export type { BezierHandles, EaseCurve };
 
@@ -307,6 +308,8 @@ export interface VideoEditorState {
   creative: CreativeState;
   /** Animated titles and shapes. Independent of clip keyframes. */
   graphics: MotionDocument;
+  /** Synced camera group. Null when the sequence is a normal timeline. */
+  multicam: MulticamSequence | null;
   /** Absolute path when the file was opened from disk in Electron. */
   sourcePath: string | null;
 }
