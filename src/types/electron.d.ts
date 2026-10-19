@@ -76,6 +76,20 @@ export interface ClientErrorReport {
   source?: string;
 }
 
+export interface AiEvent {
+  jobId: string;
+  type: 'progress' | 'done' | 'cancelled' | 'error';
+  percent?: number;
+  message?: string;
+}
+
+export interface AiModelStatus {
+  id: string;
+  label: string;
+  bytes: number;
+  ready: boolean;
+}
+
 export interface EditProBridge {
   openImage(): Promise<string[] | null>;
   openVideo(): Promise<string | null>;
@@ -121,6 +135,15 @@ export interface EditProBridge {
   remindUpdateLater(): Promise<boolean>;
   dismissUpdate(): Promise<boolean>;
   recordClientError(report: ClientErrorReport): Promise<boolean>;
+  aiStatus(): Promise<{ platform: string; arch: string; matte: AiModelStatus }>;
+  aiDownload(request: { kind: 'matte'; modelId?: string }): Promise<{ ready: boolean }>;
+  aiCancel(jobId: string): Promise<boolean>;
+  aiRemoveBackground(request: {
+    sourcePath: string;
+    mode: 'transparent' | 'color';
+    color: string;
+  }): Promise<{ outputPath: string | null }>;
+  onAiEvent(listener: (event: AiEvent) => void): () => void;
 }
 
 declare global {
