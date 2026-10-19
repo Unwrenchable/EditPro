@@ -217,6 +217,33 @@ contextBridge.exposeInMainWorld('editpro', {
 
   recordClientError: (report: unknown) => ipcRenderer.invoke('logs:record', report),
 
+  aiStatus: () => ipcRenderer.invoke('ai:status'),
+
+  aiCancel: (jobId: string) => ipcRenderer.invoke('ai:cancel', jobId),
+
+  aiDetectSilence: (request: { sourcePath: string; noiseDb: number; minDuration: number; padding: number }) =>
+    ipcRenderer.invoke('ai:detectSilence', request),
+
+  aiRenderCut: (request: { sourcePath: string; ranges: { start: number; end: number }[] }) =>
+    ipcRenderer.invoke('ai:renderCut', request),
+
+  onAiEvent: (listener: (event: {
+    jobId: string;
+    type: 'progress' | 'done' | 'cancelled' | 'error';
+    percent?: number;
+    message?: string;
+  }) => void) => {
+    if (typeof listener !== 'function') throw new Error('Invalid AI subscription');
+    const wrapped = (_event: unknown, payload: {
+      jobId: string;
+      type: 'progress' | 'done' | 'cancelled' | 'error';
+      percent?: number;
+      message?: string;
+    }) => listener(payload);
+    ipcRenderer.on('ai:event', wrapped);
+    return () => ipcRenderer.removeListener('ai:event', wrapped);
+  },
+
   /**
    * Listen for menu events sent from the main process.
    * The IPC event object is not forwarded — it exposes ipcRenderer.
