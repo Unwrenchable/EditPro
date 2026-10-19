@@ -18,9 +18,10 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "tsc -p electron/tsconfig.json && concurrently -k \"cross-env NODE_ENV=development vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron dist-electron/main.js\"",
+    "compile:electron": "tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json",
+    "dev:electron": "npm run compile:electron && concurrently -k \"cross-env NODE_ENV=development vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron dist-electron/main.js\"",
     "build": "tsc -b && vite build",
-    "build:electron": "npm run build && tsc -p electron/tsconfig.json",
+    "build:electron": "npm run build && npm run compile:electron",
     "dist": "npm run build:electron && electron-builder --publish never",
     "dist:mac": "npm run build:electron && electron-builder --mac --publish never",
     "dist:win": "npm run build:electron && electron-builder --win --publish never",
@@ -123,6 +124,15 @@
     },
     "portable": {
       "artifactName": "EditPro-Portable-${version}.exe"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false
     }
   },
   "dependencies": {

@@ -1,13 +1,155 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeTheme } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeTheme, protocol, session } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import {
+  APP_ORIGIN,
+  APP_SCHEME,
+  FileAccessGrants,
+  buildContentSecurityPolicy,
+  contentTypeForPath,
+  decodeImageDataUrl,
+  isDevToolsUrl,
+  isNavigationAllowed,
+  isTrustedIpcFrame,
+  mimeTypeForRead,
+  parseAllowedExternalUrl,
+  resolveAppStaticPath,
+  sanitizeSaveFileName,
+} from './security.js';
+import type { NavigationOptions } from './security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+/**
+ * `app` is a standard, secure scheme so packaged pages are not `file://`.
+ * Must run before `app.ready`.
+ */
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: APP_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+]);
+
 // ── Window management ────────────────────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
+const fileGrants = new FileAccessGrants();
+
+function devServerPort(): string {
+  const port = process.env.DEV_PORT ?? '5173';
+  return /^\d+$/.test(port) ? port : '5173';
+}
+
+function navigationOptions(): NavigationOptions {
+  return { isDev, devPort: devServerPort() };
+}
+
+function assertTrustedIpcSender(event: Electron.IpcMainInvokeEvent): void {
+  const frame = event.senderFrame;
+  const trusted =
+    !event.sender.isDestroyed() &&
+    frame != null &&
+    frame === event.sender.mainFrame &&
+    isTrustedIpcFrame(
+      { origin: frame.origin, url: frame.url, parent: frame.parent },
+      navigationOptions(),
+    );
+  if (!trusted) {
+    throw new Error('Unauthorized IPC sender');
+  }
+}
+
+async function openAllowedExternal(url: string): Promise<void> {
+  const safeUrl = parseAllowedExternalUrl(url);
+  if (!safeUrl) {
+    throw new Error('Refusing to open a URL that is not https or mailto');
+  }
+  await shell.openExternal(safeUrl);
+}
+
+function registerAppProtocol(): void {
+  const distRoot = path.resolve(__dirname, '../dist');
+  protocol.handle(APP_SCHEME, async (request) => {
+    const filePath = resolveAppStaticPath(distRoot, request.url);
+    if (!filePath) return new Response('Forbidden', { status: 403 });
+    try {
+      const body = await fs.readFile(filePath);
+      return new Response(new Uint8Array(body), {
+        status: 200,
+        headers: {
+          'Content-Type': contentTypeForPath(filePath),
+          'Content-Security-Policy': buildContentSecurityPolicy(navigationOptions()),
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'EISDIR') {
+        return new Response('Not found', { status: 404 });
+      }
+      return new Response('Forbidden', { status: 403 });
+    }
+  });
+}
+
+function installContentSecurityPolicy(): void {
+  const policy = buildContentSecurityPolicy(navigationOptions());
+  const port = devServerPort();
+  const urls = isDev
+    ? [`http://localhost:${port}/*`, `http://127.0.0.1:${port}/*`]
+    : [`${APP_SCHEME}://*/*`];
+  session.defaultSession.webRequest.onHeadersReceived({ urls }, (details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [policy],
+      },
+    });
+  });
+}
+
+function installPermissionHandlers(): void {
+  session.defaultSession.setPermissionRequestHandler((webContents, _permission, callback) => {
+    callback(isDevToolsUrl(webContents.getURL()));
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, _permission, requestingOrigin) => {
+    if (isDevToolsUrl(requestingOrigin)) return true;
+    return webContents != null && isDevToolsUrl(webContents.getURL());
+  });
+}
+
+function installNavigationGuards(): void {
+  app.on('web-contents-created', (_event, contents) => {
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    contents.on('will-attach-webview', (event) => {
+      event.preventDefault();
+    });
+
+    const preventUnexpectedNavigation = (targetUrl: string, preventDefault: () => void) => {
+      if (!isNavigationAllowed(contents.getURL(), targetUrl, navigationOptions())) {
+        preventDefault();
+      }
+    };
+
+    contents.on('will-navigate', (event) => {
+      preventUnexpectedNavigation(event.url, () => event.preventDefault());
+    });
+    contents.on('will-frame-navigate', (event) => {
+      preventUnexpectedNavigation(event.url, () => event.preventDefault());
+    });
+    contents.on('will-redirect', (event) => {
+      preventUnexpectedNavigation(event.url, () => event.preventDefault());
+    });
+  });
+}
 
 function createWindow() {
   nativeTheme.themeSource = 'dark';
@@ -23,7 +165,14 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
       sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+      navigateOnDragDrop: false,
+      webviewTag: false,
     },
     // macOS-specific: hide default title bar for a cleaner look
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
@@ -35,18 +184,27 @@ function createWindow() {
     mainWindow?.show();
   });
 
+  mainWindow.webContents.on('did-fail-load', (_event, code, description, url) => {
+    console.error(`EditPro failed to load ${url}: ${code} ${description}`);
+  });
+
   if (isDev) {
-    const devPort = process.env.DEV_PORT ?? '5173';
-    void mainWindow.loadURL(`http://localhost:${devPort}`);
+    void mainWindow.loadURL(`http://localhost:${devServerPort()}`);
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    void mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    void mainWindow.loadURL(`${APP_ORIGIN}/index.html`);
   }
 
   mainWindow.on('closed', () => {
+    fileGrants.clear();
     mainWindow = null;
   });
 }
+
+// Never click through a certificate error.
+app.on('certificate-error', (_event, _webContents, _url, _error, _certificate, callback) => {
+  callback(false);
+});
 
 // ── App lifecycle ────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
@@ -56,6 +214,10 @@ app.whenReady().then(() => {
     copyright: 'Copyright © 2026 Jax Harlan',
     website: 'https://github.com/Unwrenchable/EditPro',
   });
+  registerAppProtocol();
+  installContentSecurityPolicy();
+  installPermissionHandlers();
+  installNavigationGuards();
   buildApplicationMenu();
   createWindow();
 
@@ -71,9 +233,11 @@ app.on('window-all-closed', () => {
 // ── IPC: File dialogs ────────────────────────────────────────────────────────
 
 /** Open one or more image files */
-ipcMain.handle('dialog:openImage', async () => {
-  if (!mainWindow) return null;
-  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle('dialog:openImage', async (event) => {
+  assertTrustedIpcSender(event);
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  if (!parent) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(parent, {
     title: 'Open Image',
     filters: [
       {
@@ -86,13 +250,16 @@ ipcMain.handle('dialog:openImage', async () => {
     properties: ['openFile', 'multiSelections'],
   });
   if (canceled || filePaths.length === 0) return null;
+  for (const filePath of filePaths) fileGrants.grantRead(filePath);
   return filePaths;
 });
 
 /** Open a video file */
-ipcMain.handle('dialog:openVideo', async () => {
-  if (!mainWindow) return null;
-  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle('dialog:openVideo', async (event) => {
+  assertTrustedIpcSender(event);
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  if (!parent) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(parent, {
     title: 'Open Video',
     filters: [
       { name: 'Videos', extensions: ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'flv', 'wmv'] },
@@ -101,15 +268,18 @@ ipcMain.handle('dialog:openVideo', async () => {
     properties: ['openFile'],
   });
   if (canceled || filePaths.length === 0) return null;
+  fileGrants.grantRead(filePaths[0]);
   return filePaths[0];
 });
 
 /** Save an exported image */
-ipcMain.handle('dialog:saveImage', async (_event, defaultName: string) => {
-  if (!mainWindow) return null;
-  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+ipcMain.handle('dialog:saveImage', async (event, defaultName: unknown) => {
+  assertTrustedIpcSender(event);
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  if (!parent) return null;
+  const { canceled, filePath } = await dialog.showSaveDialog(parent, {
     title: 'Save Image',
-    defaultPath: defaultName,
+    defaultPath: sanitizeSaveFileName(defaultName),
     filters: [
       { name: 'PNG Image', extensions: ['png'] },
       { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
@@ -117,52 +287,59 @@ ipcMain.handle('dialog:saveImage', async (_event, defaultName: string) => {
     ],
   });
   if (canceled || !filePath) return null;
+  fileGrants.grantWrite(filePath);
   return filePath;
 });
 
-/** Read a file and return its base64 data URL */
-ipcMain.handle('fs:readFileAsDataUrl', async (_event, filePath: string) => {
-  const data = await fs.readFile(filePath);
-  const ext = path.extname(filePath).slice(1).toLowerCase();
-  const mimeMap: Record<string, string> = {
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    png: 'image/png',
-    webp: 'image/webp',
-    gif: 'image/gif',
-    bmp: 'image/bmp',
-    tiff: 'image/tiff',
-    tif: 'image/tiff',
-    mp4: 'video/mp4',
-    webm: 'video/webm',
-    mov: 'video/quicktime',
-    avi: 'video/x-msvideo',
-    mkv: 'video/x-matroska',
-  };
-  const mime = mimeMap[ext] ?? 'application/octet-stream';
-  return `data:${mime};base64,${data.toString('base64')}`;
+/** Read a file the user picked and return its base64 data URL */
+ipcMain.handle('fs:readFileAsDataUrl', async (event, filePath: unknown) => {
+  assertTrustedIpcSender(event);
+  const allowed = fileGrants.assertCanRead(filePath);
+  const info = await fs.stat(allowed);
+  if (!info.isFile()) {
+    throw new Error('Refusing to read a path that is not a file');
+  }
+  const data = await fs.readFile(allowed);
+  return `data:${mimeTypeForRead(allowed)};base64,${data.toString('base64')}`;
 });
 
-/** Write a base64 data URL to a file path */
-ipcMain.handle('fs:writeDataUrlToFile', async (_event, filePath: string, dataUrl: string) => {
-  const base64 = dataUrl.split(',')[1];
-  if (!base64) throw new Error('Invalid data URL');
-  await fs.writeFile(filePath, Buffer.from(base64, 'base64'));
+/** Write a base64 image data URL to a path the user picked in the save dialog */
+ipcMain.handle('fs:writeDataUrlToFile', async (event, filePath: unknown, dataUrl: unknown) => {
+  assertTrustedIpcSender(event);
+  const bytes = decodeImageDataUrl(dataUrl);
+  const allowed = fileGrants.consumeWrite(filePath);
+  try {
+    const info = await fs.lstat(allowed);
+    if (info.isDirectory() || info.isSymbolicLink()) {
+      throw new Error('Refusing to write a directory or symbolic link');
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  await fs.writeFile(allowed, bytes);
   return true;
 });
 
 /** Get app version */
-ipcMain.handle('app:getVersion', () => app.getVersion());
+ipcMain.handle('app:getVersion', (event) => {
+  assertTrustedIpcSender(event);
+  return app.getVersion();
+});
 
 /** Get platform */
-ipcMain.handle('app:getPlatform', () => process.platform);
+ipcMain.handle('app:getPlatform', (event) => {
+  assertTrustedIpcSender(event);
+  return process.platform;
+});
 
-/** Open a URL in the default browser */
-ipcMain.handle('shell:openExternal', (_event, url: string) => {
-  // Only allow https URLs for safety
-  if (url.startsWith('https://')) {
-    void shell.openExternal(url);
+/** Open an https or mailto URL in the default handler */
+ipcMain.handle('shell:openExternal', async (event, url: unknown) => {
+  assertTrustedIpcSender(event);
+  if (typeof url !== 'string') {
+    throw new Error('Refusing to open a URL that is not https or mailto');
   }
+  await openAllowedExternal(url);
+  return true;
 });
 
 // ── Application menu ─────────────────────────────────────────────────────────
@@ -272,7 +449,9 @@ function buildApplicationMenu() {
       submenu: [
         {
           label: 'Learn More',
-          click: () => void shell.openExternal('https://github.com/Unwrenchable/EditPro'),
+          click: () => {
+            void openAllowedExternal('https://github.com/Unwrenchable/EditPro');
+          },
         },
       ],
     },
