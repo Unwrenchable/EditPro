@@ -25,7 +25,4 @@ dist-ssr
 *.sw?
 
 dist-electron/
-build-resources/icons/
-*.icns
-*.ico
 release/

@@ -1,111 +1,15 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
-import { useVideoEditor } from '../../hooks/useVideoEditor';
+import { useEditorSession } from '../../session/editorSessionContext';
 import VideoDropZone from './VideoDropZone';
 import ProTimeline from './ProTimeline';
 import VideoControls from './VideoControls';
 import VideoAdjustmentPanel from './VideoAdjustmentPanel';
 import VideoScopesPanel from './VideoScopesPanel';
+import VideoExportModal from './VideoExportModal';
 import { buildLumetriFilter, getAutoReframeOverlay } from '../../utils/videoUtils';
 import { formatFileSize } from '../../utils/imageFilters';
-import type { VideoExportOptions, MagicMoviePlan } from '../../types';
-
-// ── Video Export Modal ────────────────────────────────────────────────────────
-
-interface VideoExportModalProps {
-  file: File | null;
-  onClose: () => void;
-}
-
-const VideoExportModal: React.FC<VideoExportModalProps> = ({ file, onClose }) => {
-  const [opts, setOpts] = useState<VideoExportOptions>({
-    platform: 'youtube', resolution: '1080p', frameRate: 30, format: 'mp4', quality: 90,
-  });
-  const [done, setDone] = useState(false);
-
-  const handleExport = () => {
-    if (!file) return;
-    // Download the original file renamed to reflect export settings
-    const url = URL.createObjectURL(file);
-    const ext = opts.format;
-    const name = file.name.replace(/\.[^.]+$/, '') + `_${opts.resolution}_${opts.frameRate}fps.${ext}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-    setDone(true);
-    setTimeout(onClose, 1500);
-  };
-
-  return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Video export">
-      <div className="modal" style={{ minWidth: 360 }}>
-        <h2 className="modal-title">Export Video</h2>
-        {done ? (
-          <div className="info-box" style={{ marginBottom: 16 }}>✅ Export started — check your Downloads folder.</div>
-        ) : (
-          <div className="modal-body">
-            <div className="form-row">
-              <label className="form-label">Platform</label>
-              <select className="form-select" value={opts.platform}
-                onChange={(e) => setOpts({ ...opts, platform: e.target.value as VideoExportOptions['platform'] })}>
-                <option value="youtube">YouTube (1080p 30fps MP4)</option>
-                <option value="tiktok">TikTok / Reels (1080p 30fps MP4)</option>
-                <option value="vimeo">Vimeo HD (1080p 24fps MP4)</option>
-                <option value="twitter">Twitter / X (720p 30fps MP4)</option>
-                <option value="custom">Custom</option>
-              </select>
-            </div>
-            {opts.platform === 'custom' && (
-              <>
-                <div className="form-row">
-                  <label className="form-label">Resolution</label>
-                  <select className="form-select" value={opts.resolution}
-                    onChange={(e) => setOpts({ ...opts, resolution: e.target.value as VideoExportOptions['resolution'] })}>
-                    <option value="4K">4K (3840×2160)</option>
-                    <option value="1080p">1080p (1920×1080)</option>
-                    <option value="720p">720p (1280×720)</option>
-                    <option value="480p">480p (854×480)</option>
-                  </select>
-                </div>
-                <div className="form-row">
-                  <label className="form-label">Frame Rate</label>
-                  <select className="form-select" value={opts.frameRate}
-                    onChange={(e) => setOpts({ ...opts, frameRate: Number(e.target.value) as VideoExportOptions['frameRate'] })}>
-                    <option value={24}>24 fps (film)</option>
-                    <option value={30}>30 fps (standard)</option>
-                    <option value={60}>60 fps (smooth)</option>
-                  </select>
-                </div>
-                <div className="form-row">
-                  <label className="form-label">Format</label>
-                  <select className="form-select" value={opts.format}
-                    onChange={(e) => setOpts({ ...opts, format: e.target.value as VideoExportOptions['format'] })}>
-                    <option value="mp4">MP4 (H.264)</option>
-                    <option value="webm">WebM (VP9)</option>
-                    <option value="mov">MOV (ProRes)</option>
-                  </select>
-                </div>
-              </>
-            )}
-            <div className="form-row">
-              <label className="form-label">Quality: {opts.quality}%</label>
-              <input type="range" min={40} max={100} value={opts.quality}
-                onChange={(e) => setOpts({ ...opts, quality: Number(e.target.value) })}
-                className="slider" aria-label="Export quality" />
-            </div>
-          </div>
-        )}
-        <div className="modal-actions">
-          <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          {!done && (
-            <button className="btn-primary" onClick={handleExport}>↓ Export</button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
+import { resolveSourcePath } from '../../utils/video/sourcePath';
+import type { MagicMoviePlan, VideoExportOptions } from '../../types';
 
 // ── VideoEditor ───────────────────────────────────────────────────────────────
 
@@ -114,15 +18,24 @@ interface VideoEditorProps {
   initialMagicPlan?: MagicMoviePlan;
   /** When provided, this file is loaded automatically on mount. */
   initialFile?: File;
+  /** Increment to open the export dialog (top bar / menu). */
+  exportRequestId?: number;
 }
 
-const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile }) => {
-  // Component owns the video ref (correct React pattern per react-hooks/refs)
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const editor = useVideoEditor(videoRef);
+const VideoEditor: React.FC<VideoEditorProps> = ({
+  initialMagicPlan,
+  initialFile,
+  exportRequestId = 0,
+}) => {
+  const { video: editor, videoRef, relinkVideo } = useEditorSession();
   const { state } = editor;
+  const { loadVideo, applyMagicPlan } = editor;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [exportSeed, setExportSeed] = useState<{ platform: VideoExportOptions['platform']; quality: number }>({
+    platform: 'youtube',
+    quality: 90,
+  });
 
   // ── Magic Movie bootstrap ──────────────────────────────────────────────────
   // Load the initial file on mount if provided (e.g. coming from Magic Movie).
@@ -130,9 +43,16 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile
   // lifetime of this component instance (key-based remount in App).
   useEffect(() => {
     if (initialFile) {
-      editor.loadVideo(initialFile);
+      loadVideo(initialFile, resolveSourcePath(initialFile, window.editpro));
     }
-  }, [initialFile, editor]);
+  }, [initialFile, loadVideo]);
+
+  // Open the dialog when the top bar or File menu asks, without an effect.
+  const [seenExportRequest, setSeenExportRequest] = useState(exportRequestId);
+  if (exportRequestId !== seenExportRequest) {
+    setSeenExportRequest(exportRequestId);
+    if (exportRequestId > 0 && state.videoUrl) setShowExportModal(true);
+  }
 
   // Apply the magic plan once the video has loaded (duration becomes > 0)
   const magicAppliedRef = useRef(false);
@@ -140,17 +60,8 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile
     if (!initialMagicPlan || !state.duration || magicAppliedRef.current) return;
     magicAppliedRef.current = true;
 
-    editor.setLumetri(initialMagicPlan.lumetri);
-    editor.setAudio(initialMagicPlan.audio);
-    editor.setAutoReframe(initialMagicPlan.autoReframe);
-    if (initialMagicPlan.playbackRate !== 1) {
-      editor.setPlaybackRate(initialMagicPlan.playbackRate);
-    }
-    initialMagicPlan.scenes.forEach((scene) => {
-      const t = scene.startPct * state.duration;
-      editor.addMarker(t, scene.label, scene.color);
-    });
-  }, [state.duration, initialMagicPlan, editor]);
+    applyMagicPlan(initialMagicPlan, state.duration);
+  }, [state.duration, initialMagicPlan, applyMagicPlan]);
 
   const videoFilter = buildLumetriFilter(state.lumetri);
   const reframeOverlay = getAutoReframeOverlay(state.autoReframe);
@@ -159,7 +70,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile
   const handleOpenVideo = useCallback(() => fileInputRef.current?.click(), []);
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) editor.loadVideo(file);
+    if (file) editor.loadVideo(file, resolveSourcePath(file, window.editpro));
   };
 
   // ── Stable transport callbacks (created in component, not hook) ────────────
@@ -201,7 +112,8 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!state.videoUrl) return;
-      // Don't fire when typing in an input or select
+      // Don't fire when typing in an input or select, or when a command shortcut is pressed.
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if ((e.target as HTMLElement).tagName === 'INPUT' ||
           (e.target as HTMLElement).tagName === 'TEXTAREA' ||
           (e.target as HTMLElement).tagName === 'SELECT') return;
@@ -246,8 +158,19 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile
   return (
     <div className="editor-layout">
       <div className="editor-main">
+        {state.mediaMissing && (
+          <div className="info-box media-missing-banner">
+            <span>Video file is offline{state.mediaName ? `: ${state.mediaName}` : ''}.</span>
+            <button type="button" className="btn-secondary" onClick={relinkVideo}>
+              Relink
+            </button>
+          </div>
+        )}
         {!state.videoUrl ? (
-          <VideoDropZone onFileSelected={editor.loadVideo} videoUrl={state.videoUrl} />
+          <VideoDropZone
+            onFileSelected={(file) => editor.loadVideo(file, resolveSourcePath(file, window.editpro))}
+            videoUrl={state.videoUrl}
+          />
         ) : (
           <div className="video-area">
             {/* ── Program Monitor ── */}
@@ -363,13 +286,33 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ initialMagicPlan, initialFile
         onSetAutoReframe={editor.setAutoReframe}
         onResetLumetri={editor.resetLumetri}
         onOpenVideo={handleOpenVideo}
-        onExport={() => setShowExportModal(true)}
+        onExport={(prefs) => {
+          setExportSeed(prefs);
+          setShowExportModal(true);
+        }}
         onDetectScenes={handleDetectScenes}
+        transition={state.transition}
+        onTransitionChange={editor.setTransition}
       />
 
-      {showExportModal && (
+      {showExportModal && state.file && (
         <VideoExportModal
           file={state.file}
+          sourcePath={state.sourcePath ?? state.mediaPath}
+          trimStart={state.trimStart}
+          trimEnd={state.trimEnd}
+          playbackRate={state.playbackRate}
+          volume={state.volume}
+          muted={state.isMuted}
+          lumetri={state.lumetri}
+          audio={state.audio}
+          autoReframe={state.autoReframe}
+          transition={state.transition}
+          clips={state.clips}
+          tracks={state.tracks}
+          initialPlatform={exportSeed.platform}
+          initialQuality={exportSeed.quality}
+          onTransitionChange={editor.setTransition}
           onClose={() => setShowExportModal(false)}
         />
       )}

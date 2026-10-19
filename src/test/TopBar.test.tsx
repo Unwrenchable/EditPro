@@ -57,4 +57,58 @@ describe('TopBar', () => {
     fireEvent.click(screen.getByRole('button', { name: /Export/i }));
     expect(onExport).toHaveBeenCalledTimes(1);
   });
+
+  it('disables undo and redo until history is available', () => {
+    const onUndo = vi.fn();
+    const onRedo = vi.fn();
+    const { rerender } = render(
+      <TopBar
+        mode="photo"
+        onModeChange={() => {}}
+        onExport={() => {}}
+        canExport={false}
+        onUndo={onUndo}
+        onRedo={onRedo}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled();
+
+    rerender(
+      <TopBar
+        mode="video"
+        onModeChange={() => {}}
+        onExport={() => {}}
+        canExport={false}
+        canUndo
+        canRedo
+        onUndo={onUndo}
+        onRedo={onRedo}
+        projectName="Cut.editpro"
+        dirty
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(onRedo).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Cut.editpro*')).toBeInTheDocument();
+  });
+
+  it('opens a recent project from the menu', () => {
+    const onOpenRecent = vi.fn();
+    render(
+      <TopBar
+        mode="photo"
+        onModeChange={() => {}}
+        onExport={() => {}}
+        canExport={false}
+        recentFiles={[{ path: '/films/cut.editpro', name: 'cut.editpro', mode: 'video', openedAt: '2026-10-19T00:00:00.000Z' }]}
+        onOpenRecent={onOpenRecent}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Recent projects' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /cut\.editpro/i }));
+    expect(onOpenRecent).toHaveBeenCalledWith('/films/cut.editpro');
+  });
 });

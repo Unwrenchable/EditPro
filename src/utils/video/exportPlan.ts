@@ -1,0 +1,53 @@
+/**
+ * Renderer entry for the ffmpeg export planner. The implementation lives in
+ * the Electron main-process folder so the same graph is used to encode.
+ */
+export {
+  ExportPlanError,
+  PLATFORM_PRESETS,
+  TRANSITION_OPTIONS,
+  atempoChain,
+  audioProcessFilters,
+  buildExportPlan,
+  createProgressParser,
+  ensureExtension,
+  explainFfmpegFailure,
+  explainSpawnError,
+  ffmpegCandidates,
+  ffmpegStopAction,
+  fileUrlToPath,
+  isAbsolutePath,
+  isFilesystemPath,
+  isMissingAudioError,
+  lumetriFilters,
+  outputSize,
+  parseClockSeconds,
+  parseExportJob,
+  pathsEqual,
+  progressFromOutTime,
+  qualityToCrf,
+  qualityToProresProfile,
+  resolveFfmpegBinary,
+  rewriteAsarPath,
+  suggestExportFilename,
+  transitionDuration,
+  unwrapIpcError,
+} from '../../../electron/export/plan';
+
+export type {
+  AutoReframeAspect,
+  BuildOptions,
+  ExportAudio,
+  ExportFormat,
+  ExportFrameRate,
+  ExportJob,
+  ExportLumetri,
+  ExportOptions,
+  ExportPlan,
+  ExportPlatform,
+  ExportResolution,
+  ExportSourceClip,
+  PlatformPreset,
+  ProgressUpdate,
+  VideoTransition,
+} from '../../../electron/export/plan';
