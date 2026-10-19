@@ -1,8 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    // Packaged main runs as Node ESM. NodeNext rejects extensionless relative
+    // imports, which crash inside app.asar with ERR_MODULE_NOT_FOUND.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "outDir": "../dist-electron",
     "rootDir": ".",
     "strict": true,

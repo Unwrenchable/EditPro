@@ -8,8 +8,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseMediaProbe, proxyDimensions } from './proxyPlan';
-import { probeWithFfmpeg, runProxyEncode } from './proxyRunner';
+import { parseMediaProbe, proxyDimensions } from './proxyPlan.js';
+import { probeWithFfmpeg, runProxyEncode } from './proxyRunner.js';
 
 const require = createRequire(import.meta.url);
 

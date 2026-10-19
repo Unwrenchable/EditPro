@@ -25,11 +25,11 @@ import {
   type CreativeState,
   type DeliveryCodec,
   type EncoderChoice,
-} from './creative';
-import { motionGraph, prepareKeyframes, type ExportKeyframe } from './motion';
+} from './creative.js';
+import { motionGraph, prepareKeyframes, type ExportKeyframe } from './motion.js';
 
-export { keyframeExpression, motionGraph, prepareKeyframes } from './motion';
-export type { ExportEase, ExportKeyframe, ExportKeyframeProperty } from './motion';
+export { keyframeExpression, motionGraph, prepareKeyframes } from './motion.js';
+export type { ExportEase, ExportKeyframe, ExportKeyframeProperty } from './motion.js';
 
 export class ExportPlanError extends Error {
   constructor(message: string) {
