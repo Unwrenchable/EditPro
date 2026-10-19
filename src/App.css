@@ -375,6 +375,14 @@
   padding: 16px 16px 0;
 }
 
+.playback-stage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .preview-video {
   max-width: 100%;
   max-height: 100%;
@@ -382,6 +390,76 @@
   border-radius: 4px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   background: #000;
+}
+
+/* Originals have no smaller decode target, so the monitor paints fewer pixels and scales them back up. */
+.playback-stage[data-monitor-scale='2'] .preview-video {
+  max-width: 50%;
+  max-height: 50%;
+  transform: scale(2);
+}
+
+.playback-stage[data-monitor-scale='4'] .preview-video {
+  max-width: 25%;
+  max-height: 25%;
+  transform: scale(4);
+}
+
+.playback-settings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 16px;
+  background: #161616;
+  border-top: 1px solid #2a2a2a;
+}
+
+.proxy-toggle,
+.proxy-cancel {
+  border: 1px solid #3a3a3a;
+  background: #242424;
+  color: #ddd;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.proxy-toggle.is-active {
+  border-color: #7c5cbf;
+  color: #fff;
+  background: #3a2d55;
+}
+
+.proxy-toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.playback-meta {
+  font-size: 12px;
+  color: #888;
+}
+
+.playback-export-note {
+  margin-left: auto;
+}
+
+.playback-error {
+  color: #e07a7a;
+  font-size: 12px;
+}
+
+.proxy-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.proxy-progress {
+  width: 96px;
+  height: 8px;
+  accent-color: #7c5cbf;
 }
 
 /* ── Video Controls ─────────────────────────────────────────────────────── */

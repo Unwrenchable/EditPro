@@ -25,6 +25,12 @@ import type { NavigationOptions } from './security.js';
 import { parseExportJob, ExportPlanError, type ExportJob } from './export/plan.js';
 import { cancelAllExports, cancelExportJob, hasActiveExport, runFfmpegExport } from './export/runner.js';
 import { ensureFfmpegExecutable, locateFfmpegBinary } from './export/ffmpegLocate.js';
+import { applyHardwareDecodeSwitches } from './playback/hwDecode.js';
+import { MEDIA_SCHEME } from './playback/mediaAccess.js';
+import { assertExportSourceAllowed } from './playback/proxyPlan.js';
+import { cancelAllProxies, clearMediaTickets, registerMediaProtocol, registerPlaybackIpc } from './playback/register.js';
+
+applyHardwareDecodeSwitches(app.commandLine, process.platform);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -36,6 +42,16 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 protocol.registerSchemesAsPrivileged([
   {
     scheme: APP_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+  {
+    scheme: MEDIA_SCHEME,
     privileges: {
       standard: true,
       secure: true,
@@ -215,6 +231,8 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => {
+    cancelAllProxies();
+    clearMediaTickets();
     fileGrants.clear();
     mainWindow = null;
   });
@@ -234,6 +252,18 @@ app.whenReady().then(() => {
     website: 'https://github.com/Unwrenchable/EditPro',
   });
   registerAppProtocol();
+  registerMediaProtocol({
+    assertTrusted: assertTrustedIpcSender,
+    hasReadGrant: (filePath) => fileGrants.hasRead(filePath),
+    navigation: navigationOptions,
+    proxyRoot: proxyCacheRoot,
+  });
+  registerPlaybackIpc({
+    assertTrusted: assertTrustedIpcSender,
+    hasReadGrant: (filePath) => fileGrants.hasRead(filePath),
+    navigation: navigationOptions,
+    proxyRoot: proxyCacheRoot,
+  });
   installContentSecurityPolicy();
   installPermissionHandlers();
   installNavigationGuards();
@@ -252,6 +282,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   cancelAllExports();
+  cancelAllProxies();
   try {
     const meta = readMetaSync();
     writeMetaSync({ ...meta, unclean: false });
@@ -416,11 +447,18 @@ async function assertRegularFileOrMissing(filePath: string): Promise<void> {
   }
 }
 
+function proxyCacheRoot(): string {
+  return path.join(app.getPath('userData'), 'proxies');
+}
+
 /** ffmpeg may read a granted source or a temp file this process just materialized. */
 async function assertExportInput(filePath: string): Promise<string> {
   const canonical = canonicalizePath(filePath);
   const allowed = fileGrants.hasRead(canonical) || isTempExportSource(canonical);
-  if (!allowed) {
+  // Temp export copies are outside the proxy cache. Proxies are never a master.
+  if (!isTempExportSource(canonical)) {
+    assertExportSourceAllowed(canonical, proxyCacheRoot(), allowed);
+  } else if (!allowed) {
     throw new Error('Refusing to read a video that was not opened in EditPro');
   }
   const info = await fs.lstat(canonical);

@@ -9,6 +9,10 @@ import VideoExportModal from './VideoExportModal';
 import { buildLumetriFilter, getAutoReframeOverlay } from '../../utils/videoUtils';
 import { formatFileSize } from '../../utils/imageFilters';
 import { resolveSourcePath } from '../../utils/video/sourcePath';
+import { monitorScale, resolutionLabel, selectPreviewUrl } from '../../playback/frameClock';
+import { usePreviewSrc } from '../../playback/usePreviewSrc';
+import { useProxyMedia } from '../../playback/useProxyMedia';
+import PlaybackSettings from './PlaybackSettings';
 import type { MagicMoviePlan, VideoExportOptions } from '../../types';
 
 // ── VideoEditor ───────────────────────────────────────────────────────────────
@@ -65,6 +69,22 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
 
   const videoFilter = buildLumetriFilter(state.lumetri);
   const reframeOverlay = getAutoReframeOverlay(state.autoReframe);
+  const proxy = useProxyMedia(state.mediaPath);
+  const playbackUrl = selectPreviewUrl({
+    originalUrl: state.videoUrl,
+    proxyUrl: proxy.proxyUrl,
+    useProxy: proxy.useProxy,
+  });
+  usePreviewSrc(videoRef, playbackUrl, state.mediaPath);
+  const showingProxy = Boolean(proxy.useProxy && proxy.proxyUrl && playbackUrl === proxy.proxyUrl);
+  const stageScale = monitorScale({ showingProxy, resolution: proxy.resolution });
+  const proxyAvailable = Boolean(state.mediaPath && window.editpro?.startProxy);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video?.dataset) return;
+    if (proxy.fps && proxy.fps > 0) video.dataset.frameRate = String(proxy.fps);
+  }, [proxy.fps, playbackUrl, videoRef]);
 
   // ── File handling ──────────────────────────────────────────────────────────
   const handleOpenVideo = useCallback(() => fileInputRef.current?.click(), []);
@@ -175,16 +195,20 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           <div className="video-area">
             {/* ── Program Monitor ── */}
             <div className="video-container" style={{ position: 'relative' }}>
+              <div className="playback-stage" data-monitor-scale={stageScale}>
               <video
                 ref={videoRef}
-                src={state.videoUrl}
                 className="preview-video"
                 style={{ filter: videoFilter }}
+                preload="auto"
+                playsInline
+                crossOrigin={playbackUrl?.startsWith('media:') ? 'anonymous' : undefined}
                 onLoadedMetadata={editor.onLoadedMetadata}
                 onTimeUpdate={editor.onTimeUpdate}
                 onEnded={handleEnded}
                 aria-label="Video preview"
               />
+              </div>
               {/* Auto Reframe crop overlay */}
               {reframeOverlay && (
                 <div
@@ -203,6 +227,24 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
                 </div>
               )}
             </div>
+
+            <PlaybackSettings
+              resolution={proxy.resolution}
+              useProxy={proxy.useProxy}
+              proxyAvailable={proxyAvailable}
+              status={proxy.status}
+              percent={proxy.percent}
+              message={proxy.message}
+              decodeLabel={proxy.decodeLabel}
+              previewLabel={
+                showingProxy
+                  ? `Proxy ${proxy.width}×${proxy.height} · ${resolutionLabel(proxy.resolution)}`
+                  : 'Original'
+              }
+              onResolution={proxy.setResolution}
+              onToggleProxy={proxy.toggleProxy}
+              onCancelProxy={proxy.cancel}
+            />
 
             {/* ── Transport controls ── */}
             <VideoControls
