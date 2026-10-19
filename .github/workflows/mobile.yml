@@ -1,0 +1,92 @@
+name: Mobile
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Unsigned builds only. Store signing stays on a developer machine.
+# See README "Android and iOS" for Play Store, App Store, and TestFlight.
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    name: Android debug APK
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the web bundle
+        run: npm run build:web
+
+      - name: Copy the web bundle into the Android project
+        run: npx cap sync android
+
+      - name: Assemble the unsigned debug APK
+        working-directory: android
+        run: chmod +x ./gradlew && ./gradlew assembleDebug --no-daemon
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: editpro-android-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-latest
+    name: iOS simulator (unsigned)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the web bundle
+        run: npm run build:web
+
+      - name: Copy the web bundle into the iOS project
+        run: npx cap sync ios
+
+      - name: Build for the iOS Simulator without signing
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Upload the simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: editpro-ios-simulator
+          path: ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app
+          if-no-files-found: error

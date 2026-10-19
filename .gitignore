@@ -27,3 +27,22 @@ dist-ssr
 dist-electron/
 release/
 public/ffmpeg/
+
+# Capacitor native build output. The projects themselves stay in git.
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore.properties
+*.jks
+*.keystore
+android/captures/
+android/app/src/main/assets/public/
+ios/App/Pods/
+ios/App/build/
+ios/App/App/public/
+ios/DerivedData/
+*.xcuserstate
+*.apk
+*.aab
+*.ipa

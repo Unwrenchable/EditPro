@@ -1,0 +1,104 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #111;
+  color: #eee;
+}
+
+body {
+  margin: 0;
+}
+
+.download-page {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 32px 20px calc(32px + env(safe-area-inset-bottom));
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9a7ad4;
+  font-size: 12px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: clamp(32px, 6vw, 48px);
+}
+
+.lede,
+#download-detected,
+#install-status {
+  color: #bbb;
+  line-height: 1.5;
+}
+
+.download-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.download-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  background: #1a1a1a;
+}
+
+.download-card-primary {
+  border-color: #7c5cbf;
+  box-shadow: inset 0 0 0 1px #7c5cbf;
+}
+
+.download-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.download-card p {
+  margin: 0;
+  flex: 1;
+  color: #aaa;
+  line-height: 1.45;
+}
+
+.download-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #3a3a3a;
+  background: #241c33;
+  color: #fff;
+  font-size: 15px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.download-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.download-steps {
+  padding: 16px 16px 16px 36px;
+  border-radius: 12px;
+  background: #181818;
+}
+
+.download-steps li + li {
+  margin-top: 8px;
+}
+
+.editor-link {
+  color: #c9a9f0;
+}

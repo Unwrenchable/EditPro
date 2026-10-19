@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildContentSecurityPolicy, buildWebContentSecurityPolicy } from './electron/security.ts'
+import { webInstallHeadTags } from './src/pwa/installMeta.ts'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const webTarget = process.env.EDITPRO_TARGET === 'web'
@@ -46,7 +47,26 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['@huggingface/transformers', '@ffmpeg/ffmpeg', 'onnxruntime-node', 'onnxruntime-web'],
   },
-  plugins: [react(), productionContentSecurityPolicy()],
+  build: webTarget
+    ? {
+        rollupOptions: {
+          input: {
+            main: path.resolve(root, 'index.html'),
+            download: path.resolve(root, 'download.html'),
+          },
+        },
+      }
+    : undefined,
+  plugins: [
+    react(),
+    productionContentSecurityPolicy(),
+    {
+      name: 'editpro-web-install-meta',
+      transformIndexHtml() {
+        return webInstallHeadTags(webTarget)
+      },
+    },
+  ],
   test: {
     globals: true,
     environment: 'jsdom',
