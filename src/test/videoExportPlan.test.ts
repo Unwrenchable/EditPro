@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { sampleBezier } from '../../electron/export/easing';
 import { DEFAULT_AUDIO, DEFAULT_LUMETRI } from '../utils/videoUtils';
 import {
   atempoChain,
@@ -337,6 +338,28 @@ describe('buildExportPlan', () => {
     expect(parsed.clips[0]?.keyframes?.[0]).toMatchObject({ property: 'positionX', value: 0.1, easing: 'easeOut' });
     const sequence = buildExportPlan(parsed);
     expect(sequence.args[sequence.args.indexOf('-filter_complex') + 1]).toContain('zoompan=z=');
+  });
+
+  it('bakes bezier knots and hue into the filter graph', () => {
+    const handles = { x1: 0.15, y1: 0.9, x2: 0.25, y2: 1 };
+    const plan = buildExportPlan(job({
+      trimStart: 0,
+      trimEnd: 2,
+      keyframes: [
+        { time: 0, property: 'opacity', value: 0, easing: 'linear' },
+        { time: 2, property: 'opacity', value: 1, easing: 'bezier', bezier: handles },
+        { time: 0, property: 'effect', value: 0, easing: 'linear', effectParam: 'hue' },
+        { time: 2, property: 'effect', value: 40, easing: 'linear', effectParam: 'hue' },
+      ],
+    }));
+    const graph = plan.args[plan.args.indexOf('-filter_complex') + 1];
+    expect(graph).toContain(sampleBezier(0.5, handles).toFixed(4));
+    expect(graph).toContain('hue=h=');
+    expect(graph).not.toContain('eval=frame');
+    const parsed = parseExportJob(job({
+      keyframes: [{ time: 1, property: 'opacity', value: 0.5, easing: 'bezier', bezier: handles }],
+    }));
+    expect(parsed.keyframes?.[0]?.bezier).toEqual(handles);
   });
 
   it('rejects an empty trim, a muted timeline, and overwriting the source', () => {

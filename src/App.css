@@ -1825,6 +1825,23 @@
   cursor: pointer;
 }
 .tl-kf-chip.active { border-color: #7c5cbf; color: #fff; }
+.tl-graph {
+  margin: 0 8px 6px;
+  padding: 6px;
+  background: #121218;
+  border: 1px solid #2a2a32;
+  border-radius: 4px;
+}
+.tl-graph-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.tl-graph-svg { width: 100%; height: 148px; display: block; touch-action: none; background: #0d0d12; }
+.tl-graph-bg { fill: #0d0d12; }
+.tl-graph-grid { stroke: #2c2c36; stroke-width: 1; }
+.tl-graph-curve { fill: none; stroke: #c9a6ff; stroke-width: 1.6; }
+.tl-graph-playhead { stroke: #e05555; stroke-width: 1; }
+.tl-graph-handle-line { stroke: #7ec8ff; stroke-width: 1; }
+.tl-graph-handle { fill: #7ec8ff; cursor: grab; }
+.tl-graph-key { fill: #e0c044; cursor: grab; }
+.tl-graph-key.active { fill: #fff; stroke: #7c5cbf; stroke-width: 1.5; }
 
 /* ── Timeline Ruler playhead marker ──────────────────────────────────────── */
 .tl-ruler-playhead {

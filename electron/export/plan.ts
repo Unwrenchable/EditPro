@@ -26,6 +26,7 @@ import {
   type DeliveryCodec,
   type EncoderChoice,
 } from './creative.js';
+import { DEFAULT_BEZIER, normalizeBezierHandles } from './easing.js';
 import { motionGraph, prepareKeyframes, type ExportKeyframe } from './motion.js';
 
 export { keyframeExpression, motionGraph, prepareKeyframes } from './motion.js';
@@ -657,7 +658,7 @@ function parseAudio(value: unknown): ExportAudio {
   };
 }
 
-const EASES = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'hold'] as const;
+const EASES = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'hold', 'bezier'] as const;
 const KEYFRAME_PROPERTIES = ['positionX', 'positionY', 'scale', 'rotation', 'opacity', 'effect'] as const;
 
 function parseKeyframe(value: unknown, label: string): ExportKeyframe {
@@ -675,6 +676,17 @@ function parseKeyframe(value: unknown, label: string): ExportKeyframe {
       throw new ExportPlanError(`${label} needs an effect parameter name.`);
     }
     keyframe.effectParam = param;
+  }
+  if (source.bezier !== undefined) {
+    const record = readRecord(source.bezier, `${label} bezier`);
+    keyframe.bezier = normalizeBezierHandles({
+      x1: readNumber(record, 'x1', `${label} bezier x1`, 0, 1),
+      y1: readNumber(record, 'y1', `${label} bezier y1`, -0.5, 1.5),
+      x2: readNumber(record, 'x2', `${label} bezier x2`, 0, 1),
+      y2: readNumber(record, 'y2', `${label} bezier y2`, -0.5, 1.5),
+    });
+  } else if (keyframe.easing === 'bezier') {
+    keyframe.bezier = { ...DEFAULT_BEZIER };
   }
   return keyframe;
 }

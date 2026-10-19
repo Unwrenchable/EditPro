@@ -30,7 +30,7 @@ import {
 } from '../utils/history';
 import { fileMediaPath, revokeIfBlob } from '../utils/mediaFiles';
 import { monitorLinearGain, type CreativeState } from '../utils/video/creative';
-import { removeKeyframe, sampleEffect, updateKeyframe, upsertKeyframe } from '../utils/video/keyframes';
+import { removeKeyframe, sampleEffect, updateKeyframe, upsertKeyframe, type KeyframePatch } from '../utils/video/keyframes';
 import { clamp } from '../utils/videoUtils';
 import {
   advancePlaybackClock,
@@ -927,7 +927,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   }, []);
 
   const updateClipKeyframe = useCallback(
-    (clipId: string, keyframeId: string, patch: Partial<Pick<ClipKeyframe, 'time' | 'value' | 'easing'>>, coalesceKey?: string) => {
+    (clipId: string, keyframeId: string, patch: KeyframePatch, coalesceKey?: string) => {
       setModel((prev) =>
         commitVideo(
           prev,
@@ -962,7 +962,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   }, []);
 
   const updateProgramKeyframe = useCallback(
-    (keyframeId: string, patch: Partial<Pick<ClipKeyframe, 'time' | 'value' | 'easing'>>, coalesceKey?: string) => {
+    (keyframeId: string, patch: KeyframePatch, coalesceKey?: string) => {
       setModel((prev) =>
         commitVideo(
           prev,
