@@ -23,6 +23,7 @@ import MotionStage from './MotionStage';
 import MotionGraphicsPanel from './MotionGraphicsPanel';
 import MulticamPanel from './MulticamPanel';
 import { fileMediaPath } from '../../utils/mediaFiles';
+import InterchangePanel from './InterchangePanel';
 import type { MagicMoviePlan, VideoEditorState, VideoExportOptions } from '../../types';
 
 function previewLook(state: VideoEditorState, baseFilter: string): {
@@ -364,6 +365,13 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
             />
           </div>
         )}
+
+        <InterchangePanel
+          tracks={state.tracks}
+          clips={state.clips}
+          sequenceName={state.mediaName?.replace(/\.[^.]+$/, '') || 'Sequence'}
+          onReplace={editor.replaceTimeline}
+        />
 
         {/* ── Pro Timeline ── */}
         <ProTimeline

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.9">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p24" frameDuration="1/24s" width="1920" height="1080"/>
+    <asset id="r2" name="interview.mov" src="file:///films/interview.mov" start="0s" duration="3700s" hasVideo="1" hasAudio="0" format="r1"/>
+    <asset id="r3" name="room.wav" start="0s" duration="3700s" hasVideo="0" hasAudio="1" format="r1">
+      <media-rep kind="original-media" src="file:///films/room.wav"/>
+    </asset>
+  </resources>
+  <library>
+    <event name="EditPro">
+      <project name="INTERVIEW">
+        <sequence format="r1" duration="4s" tcStart="0s" tcFormat="NDF">
+          <spine>
+            <asset-clip ref="r2" name="interview.mov" offset="0s" start="3600s" duration="4s">
+              <asset-clip ref="r3" lane="-1" name="room.wav" offset="0s" start="3600s" duration="4s"/>
+            </asset-clip>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>
