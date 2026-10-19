@@ -1060,7 +1060,7 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  max-height: 260px;
+  max-height: 520px;
 }
 .pro-timeline-empty {
   padding: 12px 16px;
@@ -1095,6 +1095,11 @@
 }
 .tl-tool-btn:hover {
   background: #333;
+}
+.tl-tool-btn.active {
+  background: #2a2040;
+  border-color: #7c5cbf;
+  color: #fff;
 }
 .tl-timecode {
   font-size: 12px;
@@ -1657,6 +1662,91 @@
 }
 .tl-clip:hover { border-color: #5a80b0; }
 .tl-clip-selected { border-color: #7faff0 !important; box-shadow: 0 0 0 1px #5580e0; }
+.tl-clip-linked { border-style: dashed; }
+.tl-clip-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 2;
+}
+.tl-clip-edge-in { left: 0; }
+.tl-clip-edge-out { right: 0; }
+.tl-keyframe {
+  position: absolute;
+  top: 3px;
+  width: 7px;
+  height: 7px;
+  margin-left: -3px;
+  background: #f0c040;
+  transform: rotate(45deg);
+  z-index: 3;
+  cursor: ew-resize;
+}
+.tl-keyframe-opacity { background: #7ec8ff; }
+.tl-keyframe-scale { background: #c08bff; }
+.tl-keyframe-rotation { background: #ff9a6b; }
+.tl-keyframe-positionX,
+.tl-keyframe-positionY { background: #7dffa1; }
+.tl-keyframe-effect { background: #ff7ad1; }
+.tl-keyframe.active { outline: 1px solid #fff; }
+.tl-multitrack-header.targeted { box-shadow: inset 3px 0 0 #7c5cbf; }
+.tl-kf-inspector {
+  padding: 6px 10px;
+  background: #161616;
+  border-top: 1px solid #252525;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tl-kf-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tl-kf-target {
+  font-size: 10px;
+  color: #888;
+  min-width: 72px;
+}
+.tl-kf-param,
+.tl-kf-ease select {
+  background: #1c1c1c;
+  color: #ddd;
+  border: 1px solid #333;
+  border-radius: 3px;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.tl-kf-ease {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #777;
+}
+.tl-kf-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #888;
+}
+.tl-kf-value input { width: 120px; accent-color: #7c5cbf; }
+.tl-kf-readout { font-size: 10px; color: #aaa; font-variant-numeric: tabular-nums; }
+.tl-kf-list { display: flex; gap: 4px; flex-wrap: wrap; }
+.tl-kf-chip {
+  border: 1px solid #333;
+  background: #1c1c1c;
+  color: #bbb;
+  border-radius: 3px;
+  font-size: 10px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.tl-kf-chip.active { border-color: #7c5cbf; color: #fff; }
 
 /* ── Timeline Ruler playhead marker ──────────────────────────────────────── */
 .tl-ruler-playhead {

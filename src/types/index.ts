@@ -122,6 +122,29 @@ export interface TimelineTrack {
   locked: boolean;
 }
 
+export type EaseCurve = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' | 'hold';
+
+/** Transform channels, plus `effect` for a named effect parameter. */
+export type KeyframeProperty = 'positionX' | 'positionY' | 'scale' | 'rotation' | 'opacity' | 'effect';
+
+/**
+ * One animated value on a clip or on the program.
+ * `time` is seconds from the clip's timeline start. Program keyframes use
+ * absolute sequence time. `easing` is the curve used to arrive at this key
+ * from the previous key of the same property.
+ */
+export interface ClipKeyframe {
+  id: string;
+  time: number;
+  property: KeyframeProperty;
+  value: number;
+  easing: EaseCurve;
+  /** Set when `property` is `effect` (blur, brightness, contrast, saturation, volume). */
+  effectParam?: string;
+}
+
+export type TimelineTool = 'select' | 'razor' | 'ripple' | 'roll' | 'slip' | 'slide';
+
 export interface TimelineClip {
   id: string;
   src: string;
@@ -130,6 +153,10 @@ export interface TimelineClip {
   endTime: number;
   inPoint: number;
   outPoint: number;
+  /** Shared with the linked picture or sound clip. Missing on older projects. */
+  linkId?: string | null;
+  /** Missing on older projects, which means the clip is not animated. */
+  keyframes?: ClipKeyframe[];
 }
 
 // ── Audio Clips ─────────────────────────────────────────────────────────────
@@ -262,6 +289,12 @@ export interface VideoEditorState {
   tracks: TimelineTrack[];
   /** Multi-track timeline clips */
   clips: TimelineClip[];
+  /** Snap clip edges, the playhead, markers, and in/out points while editing. */
+  snapping: boolean;
+  /** Keyframes applied to the program (the loaded source), in sequence time. */
+  programKeyframes: ClipKeyframe[];
+  /** J/K/L shuttle rate. Negative plays in reverse. Not an undoable edit. */
+  shuttleRate: number;
   /** Transition rendered on export at the In/Out points. */
   transition: VideoTransition;
   /** Absolute path when the file was opened from disk in Electron. */
