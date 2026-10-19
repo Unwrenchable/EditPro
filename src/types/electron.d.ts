@@ -146,6 +146,11 @@ export interface AiStatus {
   models: AiModelStatus[];
 }
 
+export interface AiSceneHit {
+  time: number;
+  score: number;
+}
+
 export interface EditProBridge {
   openImage(): Promise<string[] | null>;
   openVideo(): Promise<string | null>;
@@ -199,6 +204,7 @@ export interface EditProBridge {
   aiStatus(): Promise<AiStatus>;
   aiDownload(request: { kind: 'model' | 'cli'; modelId?: string }): Promise<{ ready: boolean }>;
   aiCancel(jobId: string): Promise<boolean>;
+  aiDetectScenes(request: { sourcePath: string; threshold: number }): Promise<{ hits: AiSceneHit[] }>;
   aiTranscribe(request: { sourcePath: string; modelId: string; language?: string }): Promise<{ cues: AiCaptionCue[] }>;
   aiSaveCaptions(request: { cues: AiCaptionCue[]; format: 'srt' | 'vtt' }): Promise<{ outputPath: string | null }>;
   aiBurnCaptions(request: { sourcePath: string; cues: AiCaptionCue[] }): Promise<{ outputPath: string | null }>;

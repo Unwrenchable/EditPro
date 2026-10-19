@@ -235,6 +235,9 @@ contextBridge.exposeInMainWorld('editpro', {
 
   aiCancel: (jobId: string) => ipcRenderer.invoke('ai:cancel', jobId),
 
+  aiDetectScenes: (request: { sourcePath: string; threshold: number }) =>
+    ipcRenderer.invoke('ai:detectScenes', request),
+
   aiTranscribe: (request: { sourcePath: string; modelId: string; language?: string }) =>
     ipcRenderer.invoke('ai:transcribe', request),
 

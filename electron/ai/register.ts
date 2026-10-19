@@ -14,9 +14,11 @@ import {
   parseCues,
   parseCutRequest,
   parseDownloadRequest,
+  parseSceneRequest,
   parseSourcePath,
   parseTranscribeRequest,
 } from './payload.js';
+import { detectScenes } from './scenes/run.js';
 
 export { cancelAllAiJobs };
 
@@ -48,6 +50,23 @@ export function registerOfflineAi(host: AiHost): void {
     host.assertTrusted(event);
     if (typeof jobId !== 'string' || jobId.length === 0) return false;
     return cancelAiJob(jobId);
+  });
+
+  ipcMain.handle('ai:detectScenes', async (event, payload: unknown) => {
+    host.assertTrusted(event);
+    const request = parseSceneRequest(payload);
+    const sourcePath = await host.assertReadable(request.sourcePath);
+    return withAiJob(host, event, async ({ signal, progress }) => {
+      progress(15, 'Scoring scene changes');
+      const hits = await detectScenes({
+        ffmpegPath: await host.ffmpegPath(),
+        sourcePath,
+        threshold: request.threshold,
+        signal,
+      });
+      progress(100, hits.length === 0 ? 'No scene changes found' : `Found ${hits.length} scene changes`);
+      return { hits };
+    });
   });
 
   ipcMain.handle('ai:download', async (event, payload: unknown) => {

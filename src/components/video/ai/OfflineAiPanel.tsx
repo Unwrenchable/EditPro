@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { planRemoval, shiftWords, type TranscriptWord } from '../../../ai/editPlan';
 import { useEditorSession } from '../../../session/editorSessionContext';
-import type { AiStatus, AiTimeRange } from '../../../types/electron';
+import type { AiSceneHit, AiStatus, AiTimeRange } from '../../../types/electron';
 import { createTimelineId } from '../../../utils/video/timelineEdit';
 import CaptionsPanel from './CaptionsPanel';
 import FillerPanel from './FillerPanel';
+import ScenesPanel from './ScenesPanel';
 import TranscriptPanel from './TranscriptPanel';
 import { useAiTask } from './useAiTask';
 
@@ -49,14 +50,30 @@ export default function OfflineAiPanel() {
     setWords((current) => nextWords ?? shiftWords(current, ranges));
   }, [setError, sourcePath, video]);
 
+  const markScenes = useCallback((hits: AiSceneHit[]) => {
+    video.applyVideoEdit((snap) => {
+      const stamped = Date.now();
+      const markers = hits.map((hit, index) => ({
+        id: `m_scene_${stamped}_${index}`,
+        time: hit.time,
+        label: 'Scene cut',
+        color: 'green' as const,
+      }));
+      return {
+        ...snap,
+        markers: [...snap.markers, ...markers].sort((a, b) => a.time - b.time),
+      };
+    });
+  }, [video]);
+
   return (
     <div className="ai-tools">
       <div className="info-box">
-        Whisper runs on this computer. The speech model downloads once, then captions, filler removal, and text edits stay offline.
+        Captions, silence, scenes, and background removal run on this computer. Speech and matte models download once, then stay offline.
       </div>
       {!desktop && <p className="panel-hint ai-hint">These tools run in the desktop app.</p>}
       {desktop && !sourcePath && (
-        <p className="panel-hint ai-hint">Open a video from disk. A browser-only preview has no file Whisper can read.</p>
+        <p className="panel-hint ai-hint">Open a video from disk. A browser-only preview has no file these tools can read.</p>
       )}
       {(progress || error) && (
         <div className="ai-status">
@@ -65,6 +82,7 @@ export default function OfflineAiPanel() {
           {busy && <button type="button" className="reset-btn" onClick={cancel}>Cancel</button>}
         </div>
       )}
+      <ScenesPanel sourcePath={sourcePath} busy={busy} onMark={markScenes} run={run} />
       <CaptionsPanel
         sourcePath={sourcePath}
         busy={busy}
