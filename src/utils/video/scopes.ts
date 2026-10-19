@@ -41,6 +41,14 @@ export interface VectorscopeData {
   resolution: number;
 }
 
+/** 256-bin counts for red, green, blue, and luma. */
+export interface HistogramData {
+  red: number[];
+  green: number[];
+  blue: number[];
+  luma: number[];
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Convert linear 0-255 RGB to ITU-R BT.601 luma (Y) */
@@ -139,4 +147,23 @@ export function computeVectorscope(
   }
 
   return { points, resolution };
+}
+
+/** 256-bin RGB and luma histogram. */
+export function computeHistogram(imageData: ImageData): HistogramData {
+  const red = new Array<number>(256).fill(0);
+  const green = new Array<number>(256).fill(0);
+  const blue = new Array<number>(256).fill(0);
+  const luma = new Array<number>(256).fill(0);
+  const { data } = imageData;
+  for (let index = 0; index < data.length; index += 4) {
+    const r = data[index];
+    const g = data[index + 1];
+    const b = data[index + 2];
+    red[r] += 1;
+    green[g] += 1;
+    blue[b] += 1;
+    luma[Math.round(rgbToLuma(r, g, b))] += 1;
+  }
+  return { red, green, blue, luma };
 }

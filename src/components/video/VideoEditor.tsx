@@ -12,39 +12,50 @@ import ProgramOverlay from './ProgramOverlay';
 import { useWaveformPeaks } from '../../hooks/useWaveformPeaks';
 import { formatFileSize } from '../../utils/imageFilters';
 import { resolveSourcePath } from '../../utils/video/sourcePath';
-import { sampleEffect, sampleTransform } from '../../utils/video/keyframes';
+import { keyframedCss, sampleEffect, sampleTransform } from '../../utils/video/keyframes';
 import { clipAtPlayhead, editPoints, neighborEdit } from '../../utils/video/timelineEdit';
 import { matchNleShortcut, nleActionKind } from '../../utils/video/nleShortcuts';
 import { monitorScale, resolutionLabel, selectPreviewUrl } from '../../playback/frameClock';
+import { packPreviewGrade, previewBackendLabel } from '../../playback/gpu/grade';
+import { useGpuPreview } from '../../playback/gpu/useGpuPreview';
+import { liftGammaGainIsNeutral } from '../../utils/video/creative';
 import { usePreviewSrc } from '../../playback/usePreviewSrc';
 import { useProxyMedia } from '../../playback/useProxyMedia';
 import PlaybackSettings from './PlaybackSettings';
+import MotionStage from './MotionStage';
+import MotionGraphicsPanel from './MotionGraphicsPanel';
+import MulticamPanel from './MulticamPanel';
+import { fileMediaPath } from '../../utils/mediaFiles';
+import InterchangePanel from './InterchangePanel';
 import type { MagicMoviePlan, VideoEditorState, VideoExportOptions } from '../../types';
 
 function previewLook(state: VideoEditorState, baseFilter: string): {
   filter: string;
   effectFilter: string;
   picture: React.CSSProperties;
+  brightness: number | null;
+  contrast: number | null;
+  saturation: number | null;
+  blur: number | null;
 } {
   const clip = clipAtPlayhead(state.clips, state.tracks, state.currentTime);
   const useClip = Boolean(clip?.keyframes && clip.keyframes.length > 0);
   const keys = useClip ? clip?.keyframes : state.programKeyframes;
   const time = useClip && clip ? state.currentTime - clip.startTime : state.currentTime;
   const motion = sampleTransform(keys, time);
-  const brightness = sampleEffect(keys, 'brightness', time);
-  const contrast = sampleEffect(keys, 'contrast', time);
-  const saturation = sampleEffect(keys, 'saturation', time);
-  const blur = sampleEffect(keys, 'blur', time);
-  const extras = [
-    brightness !== null ? `brightness(${(1 + brightness).toFixed(3)})` : '',
-    contrast !== null ? `contrast(${contrast.toFixed(3)})` : '',
-    saturation !== null ? `saturate(${saturation.toFixed(3)})` : '',
-    blur !== null ? `blur(${Math.max(0, blur).toFixed(2)}px)` : '',
-  ].filter((part) => part.length > 0);
+  const effectBrightness = sampleEffect(keys, 'brightness', time);
+  const effectContrast = sampleEffect(keys, 'contrast', time);
+  const effectSaturation = sampleEffect(keys, 'saturation', time);
+  const effectBlur = sampleEffect(keys, 'blur', time);
+  const extras = keyframedCss(keys, time).split(' ').filter((part) => part.length > 0);
   const moved = motion.positionX !== 0 || motion.positionY !== 0 || motion.scale !== 1 || motion.rotation !== 0;
   return {
     filter: [baseFilter, ...extras].filter(Boolean).join(' '),
     effectFilter: extras.join(' '),
+    brightness: effectBrightness,
+    contrast: effectContrast,
+    saturation: effectSaturation,
+    blur: effectBlur,
     picture: {
       opacity: motion.opacity,
       transform: moved
@@ -75,6 +86,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   const { state } = editor;
   const { loadVideo, applyMagicPlan } = editor;
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const gpuCanvasRef = useRef<HTMLCanvasElement>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportSeed, setExportSeed] = useState<{ platform: VideoExportOptions['platform']; quality: number }>({
     platform: 'youtube',
@@ -109,6 +121,9 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
 
   const videoFilter = buildLumetriFilter(state.lumetri);
   const look = previewLook(state, videoFilter);
+  const previewGrade = packPreviewGrade(state.lumetri, look);
+  const cpuGrade = !liftGammaGainIsNeutral(state.creative.liftGammaGain) || state.creative.lut !== null;
+  const previewBackend = useGpuPreview(videoRef, gpuCanvasRef, previewGrade, Boolean(state.videoUrl) && !cpuGrade);
   const reframeOverlay = getAutoReframeOverlay(state.autoReframe);
   const waveform = useWaveformPeaks(state.videoUrl);
   const proxy = useProxyMedia(state.mediaPath);
@@ -170,16 +185,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
       transitions: [...without, { ...placed, id: `xfade_${Date.now()}` }],
     });
   }, [editor, state.clips, state.creative]);
-  const handleDetectScenes   = useCallback(() => {
-    // Simulated scene detection: add markers at regular intervals
-    const interval = Math.max(state.duration / 8, 2);
-    let t = interval;
-    while (t < state.duration - 1) {
-      editor.addMarker(Math.round(t * 10) / 10, 'Scene cut', 'green');
-      t += interval;
-    }
-  }, [editor, state.duration]);
-
+  const handleInsertClip = useCallback(() => editor.insertLoadedMedia(), [editor]);
   // ── Keyboard shortcuts (transport). Timeline tools are handled in ProTimeline.
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -263,11 +269,20 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
                 pictureStyle={look.picture}
                 canvasFilter={look.effectFilter}
                 videoRef={videoRef}
+                gpuActive={previewBackend !== 'css'}
+                previewCanvas={
+                  <canvas
+                    ref={gpuCanvasRef}
+                    className="gpu-preview-canvas"
+                    data-preview-backend={previewBackend}
+                    aria-hidden="true"
+                  />
+                }
               >
               <video
                 ref={videoRef}
                 className="preview-video"
-                style={{ filter: look.filter || undefined }}
+                style={{ filter: previewBackend === 'css' ? (look.filter || undefined) : undefined }}
                 preload="auto"
                 playsInline
                 crossOrigin={playbackUrl?.startsWith('media:') ? 'anonymous' : undefined}
@@ -277,6 +292,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
                 aria-label="Video preview"
               />
               </ProgramOverlay>
+              <MotionStage document={state.graphics} currentTime={state.currentTime} />
               </div>
               {/* Auto Reframe crop overlay */}
               {reframeOverlay && (
@@ -310,9 +326,34 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
                   ? `Proxy ${proxy.width}×${proxy.height} · ${resolutionLabel(proxy.resolution)}`
                   : 'Original'
               }
+              rendererLabel={previewBackendLabel(previewBackend)}
               onResolution={proxy.setResolution}
               onToggleProxy={proxy.toggleProxy}
               onCancelProxy={proxy.cancel}
+            />
+
+            <MulticamPanel
+              sequence={state.multicam}
+              currentTime={state.currentTime}
+              isPlaying={state.isPlaying}
+              duration={state.duration}
+              frameRate={30}
+              mediaPath={state.mediaPath}
+              mediaName={state.mediaName}
+              mediaMissing={state.mediaMissing}
+              programUrl={state.videoUrl}
+              advice={proxy.advice}
+              onChange={editor.setMulticam}
+              onCommit={editor.commitMulticamCuts}
+              onRelinkFile={(file) => {
+                editor.setMedia({
+                  file,
+                  url: URL.createObjectURL(file),
+                  path: window.editpro?.getPathForFile(file) || fileMediaPath(file),
+                  name: file.name,
+                  missing: false,
+                });
+              }}
             />
 
             {/* ── Transport controls ── */}
@@ -336,8 +377,21 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
 
             {/* ── Video Scopes ── */}
             <VideoScopesPanel videoRef={videoRef} />
+            <MotionGraphicsPanel
+              document={state.graphics}
+              currentTime={state.currentTime}
+              disabled={!state.videoUrl}
+              onChange={editor.setGraphics}
+            />
           </div>
         )}
+
+        <InterchangePanel
+          tracks={state.tracks}
+          clips={state.clips}
+          sequenceName={state.mediaName?.replace(/\.[^.]+$/, '') || 'Sequence'}
+          onReplace={editor.replaceTimeline}
+        />
 
         {/* ── Pro Timeline ── */}
         <ProTimeline
@@ -390,6 +444,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           peaks={waveform.peaks}
           mediaDuration={waveform.duration || state.duration}
           onDropTransition={handleDropTransition}
+          onInsertClip={handleInsertClip}
         />
 
         {state.file && (
@@ -429,7 +484,6 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           setExportSeed(prefs);
           setShowExportModal(true);
         }}
-        onDetectScenes={handleDetectScenes}
         transition={state.transition}
         onTransitionChange={editor.setTransition}
         creative={state.creative}
@@ -439,6 +493,11 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
         duration={state.duration}
         onCreativeChange={editor.setCreative}
         onSetTrackMuted={handleSetTrackMuted}
+        peaks={waveform.peaks}
+        mediaDuration={waveform.duration || state.duration}
+        trimStart={state.trimStart}
+        playbackRate={state.playbackRate}
+        videoRef={videoRef}
       />
 
       {showExportModal && state.file && (
@@ -458,6 +517,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           tracks={state.tracks}
           programKeyframes={state.programKeyframes}
           creative={state.creative}
+          graphics={state.graphics}
           onCreativeChange={editor.setCreative}
           initialPlatform={exportSeed.platform}
           initialQuality={exportSeed.quality}

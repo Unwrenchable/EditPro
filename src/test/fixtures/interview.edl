@@ -1,0 +1,10 @@
+TITLE: INTERVIEW
+FCM: NON-DROP FRAME
+
+001  INTV     V     C        01:00:00:00 01:00:04:00 00:00:00:00 00:00:04:00
+* FROM CLIP NAME: interview.mov
+* SOURCE FILE: /films/interview.mov
+
+002  ROOM     A     C        01:00:00:00 01:00:04:00 00:00:00:00 00:00:04:00
+* FROM CLIP NAME: room.wav
+* SOURCE FILE: /films/room.wav

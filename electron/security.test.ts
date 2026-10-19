@@ -229,7 +229,8 @@ describe('content security policy', () => {
     expect(production).toContain("style-src-attr 'unsafe-inline'");
     expect(production).toContain("object-src 'none'");
     expect(production).toContain("frame-ancestors 'none'");
-    expect(production).toContain("connect-src 'none'");
+    expect(production).toContain('connect-src blob: media:');
+    expect(production).not.toContain('https:');
     const meta = buildContentSecurityPolicy({ ...prod, delivery: 'meta' });
     expect(meta).not.toContain('frame-ancestors');
     expect(meta).toContain("script-src 'self'");

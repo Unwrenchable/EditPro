@@ -30,7 +30,9 @@ import {
 } from '../utils/history';
 import { fileMediaPath, revokeIfBlob } from '../utils/mediaFiles';
 import { monitorLinearGain, type CreativeState } from '../utils/video/creative';
-import { removeKeyframe, sampleEffect, updateKeyframe, upsertKeyframe } from '../utils/video/keyframes';
+import { removeKeyframe, sampleEffect, updateKeyframe, upsertKeyframe, type KeyframePatch } from '../utils/video/keyframes';
+import type { MotionDocument } from '../utils/video/motionGraphics';
+import { multicamTrack, type MulticamSequence } from '../utils/video/multicam';
 import { clamp } from '../utils/videoUtils';
 import {
   advancePlaybackClock,
@@ -50,8 +52,10 @@ import {
 import {
   clipAtPlayhead,
   createTimelineId,
+  insertProgramClip,
   liftDelete,
   linkPair,
+  MIN_CLIP_DURATION,
   markClipRange,
   moveClipTo,
   razorAtTime,
@@ -195,6 +199,8 @@ function toVideoState(model: VideoModel): VideoEditorState {
     shuttleRate: model.shuttle,
     transition: snap.transition,
     creative: snap.creative,
+    graphics: snap.graphics,
+    multicam: snap.multicam,
     sourcePath: model.mediaPath,
   };
 }
@@ -751,6 +757,46 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     );
   }, []);
 
+  const replaceTimeline = useCallback((tracks: TimelineTrack[], clips: TimelineClip[]) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => {
+        const nextTracks = tracks.length > 0 ? tracks : snap.tracks;
+        const nextClips = clips.map((clip) => ({
+          ...clip,
+          linkId: clip.linkId ?? null,
+          keyframes: clip.keyframes ?? [],
+        }));
+        return {
+          ...snap,
+          tracks: nextTracks,
+          clips: nextClips,
+          creative: reconcileCreative(snap.creative, snap.clips, nextClips),
+        };
+      }),
+    );
+  }, []);
+
+  const insertLoadedMedia = useCallback(() => {
+    setModel((prev) => {
+      const src = prev.mediaPath && prev.mediaPath.length > 0 ? prev.mediaPath : prev.videoUrl;
+      if (!src || prev.duration <= 0) return prev;
+      return commitVideo(prev, (snap) => {
+        const inPoint = Math.max(0, snap.trimStart);
+        const trimmed = snap.trimEnd > inPoint + MIN_CLIP_DURATION ? Math.min(snap.trimEnd, prev.duration) : prev.duration;
+        const clips = insertProgramClip({
+          clips: snap.clips,
+          tracks: snap.tracks,
+          src,
+          inPoint,
+          outPoint: trimmed,
+          createId: createTimelineId,
+        });
+        if (!clips) return snap;
+        return withClipEdit(snap, () => clips);
+      });
+    });
+  }, []);
+
   const addClip = useCallback((trackId: string, src: string, inPoint: number, outPoint: number, startTime: number) => {
     setModel((prev) =>
       commitVideo(prev, (snap) => {
@@ -927,7 +973,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   }, []);
 
   const updateClipKeyframe = useCallback(
-    (clipId: string, keyframeId: string, patch: Partial<Pick<ClipKeyframe, 'time' | 'value' | 'easing'>>, coalesceKey?: string) => {
+    (clipId: string, keyframeId: string, patch: KeyframePatch, coalesceKey?: string) => {
       setModel((prev) =>
         commitVideo(
           prev,
@@ -962,7 +1008,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
   }, []);
 
   const updateProgramKeyframe = useCallback(
-    (keyframeId: string, patch: Partial<Pick<ClipKeyframe, 'time' | 'value' | 'easing'>>, coalesceKey?: string) => {
+    (keyframeId: string, patch: KeyframePatch, coalesceKey?: string) => {
       setModel((prev) =>
         commitVideo(
           prev,
@@ -982,6 +1028,25 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
 
   const setCreative = useCallback((creative: CreativeState, coalesceKey?: string) => {
     setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, creative }), coalesceKey));
+  }, []);
+
+  const setGraphics = useCallback((graphics: MotionDocument, coalesceKey?: string) => {
+    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, graphics }), coalesceKey));
+  }, []);
+
+  const setMulticam = useCallback((multicam: MulticamSequence | null) => {
+    setModel((prev) => commitVideo(prev, (snap) => ({ ...snap, multicam })));
+  }, []);
+
+  const commitMulticamCuts = useCallback((clips: TimelineClip[]) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => {
+        const track = multicamTrack();
+        const tracks = snap.tracks.some((item) => item.id === track.id) ? snap.tracks : [...snap.tracks, track];
+        const kept = snap.clips.filter((clip) => clip.trackId !== track.id);
+        return { ...snap, tracks, clips: [...kept, ...clips] };
+      }),
+    );
   }, []);
 
   const applyMagicPlan = useCallback(
@@ -1010,6 +1075,13 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     },
     [videoRef],
   );
+
+  const applyVideoEdit = useCallback((edit: (snap: VideoEditSnapshot) => VideoEditSnapshot) => {
+    setModel((prev) => commitVideo(prev, (snap) => {
+      const next = edit(snap);
+      return { ...next, creative: reconcileCreative(snap.creative, snap.clips, next.clips) };
+    }));
+  }, []);
 
   const resetVideo = useCallback((videoUrl: string | null) => {
     resetPlaybackClock(clockRef.current);
@@ -1113,10 +1185,12 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     setTransition,
     setTimelineZoom,
     addTrack,
+    replaceTimeline,
     setTrackMuted,
     setTrackLocked,
     removeTrack,
     addClip,
+    insertLoadedMedia,
     moveClip,
     splitClip,
     razorAt,
@@ -1145,7 +1219,11 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     updateProgramKeyframe,
     removeProgramKeyframe,
     setCreative,
+    setGraphics,
+    setMulticam,
+    commitMulticamCuts,
     applyMagicPlan,
+    applyVideoEdit,
     resetVideo,
     undo,
     redo,

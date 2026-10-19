@@ -30,11 +30,18 @@ import { applyHardwareDecodeSwitches } from './playback/hwDecode.js';
 import { MEDIA_SCHEME } from './playback/mediaAccess.js';
 import { assertExportSourceAllowed } from './playback/proxyPlan.js';
 import { cancelAllProxies, clearMediaTickets, registerMediaProtocol, registerPlaybackIpc } from './playback/register.js';
+import { cancelAllAiJobs, registerOfflineAi } from './ai/register.js';
 
 applyHardwareDecodeSwitches(app.commandLine, process.platform);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+/**
+ * UI smoke tests set EDITPRO_LOAD_DIST=1 so the unpackaged Electron binary
+ * opens the production renderer in dist/ over app://. Packaged builds ignore
+ * the variable and load that same bundle because app.isPackaged is true.
+ */
+const loadBuiltRenderer = process.env.EDITPRO_LOAD_DIST === '1';
+const isDev = !loadBuiltRenderer && (process.env.NODE_ENV === 'development' || !app.isPackaged);
 
 /**
  * `app` is a standard, secure scheme so packaged pages are not `file://`.
@@ -266,6 +273,45 @@ app.whenReady().then(() => {
     navigation: navigationOptions,
     proxyRoot: proxyCacheRoot,
   });
+  registerOfflineAi({
+    assertTrusted: assertTrustedIpcSender,
+    assertReadable: assertExportInput,
+    assertWritable: (filePath) => fileGrants.assertCanWrite(filePath),
+    assertRegular: assertRegularFileOrMissing,
+    grantRead: (filePath) => {
+      fileGrants.grantRead(filePath);
+    },
+    persistGrants,
+    ffmpegPath: async () => {
+      const ffmpegPath = locateFfmpegBinary({
+        packaged: app.isPackaged,
+        platform: process.platform,
+        resourcesPath: process.resourcesPath,
+      });
+      await ensureFfmpegExecutable(ffmpegPath, process.platform);
+      return ffmpegPath;
+    },
+    userData: () => app.getPath('userData'),
+    platform: process.platform,
+    arch: process.arch,
+    pickSave: async (event, options) => {
+      const parent = BrowserWindow.fromWebContents(event.sender);
+      if (!parent) return null;
+      const { canceled, filePath } = await dialog.showSaveDialog(parent, {
+        title: options.title,
+        defaultPath: sanitizeSaveFileName(options.defaultName, options.defaultName),
+        filters: options.filters,
+      });
+      if (canceled || !filePath) return null;
+      fileGrants.grantWrite(filePath);
+      persistGrants();
+      return filePath;
+    },
+    send: (event, payload) => {
+      if (event.sender.isDestroyed()) return;
+      event.sender.send('ai:event', payload);
+    },
+  });
   installContentSecurityPolicy();
   installPermissionHandlers();
   installNavigationGuards();
@@ -293,6 +339,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   cancelAllExports();
   cancelAllProxies();
+  cancelAllAiJobs();
   try {
     const meta = readMetaSync();
     writeMetaSync({ ...meta, unclean: false });

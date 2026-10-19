@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeWaveform, computeVectorscope } from '../utils/video/scopes';
+import { computeHistogram, computeWaveform, computeVectorscope } from '../utils/video/scopes';
 
 // ── Helper: build a synthetic ImageData ──────────────────────────────────────
 
@@ -123,6 +123,18 @@ describe('computeVectorscope', () => {
     const img = makeImageData(1, 1, () => [128, 128, 128, 255]);
     const vs = computeVectorscope(img, 64, 1);
     expect(vs.points.length).toBe(1);
+  });
+});
+
+describe('computeHistogram', () => {
+  it('puts white in the top bin and black in the bottom bin', () => {
+    const white = computeHistogram(makeImageData(2, 2, () => [255, 255, 255, 255]));
+    expect(white.red[255]).toBe(4);
+    expect(white.luma[255]).toBe(4);
+    expect(white.red[0]).toBe(0);
+    const black = computeHistogram(makeImageData(2, 1, () => [0, 0, 0, 255]));
+    expect(black.blue[0]).toBe(2);
+    expect(black.luma[0]).toBe(2);
   });
 });
 

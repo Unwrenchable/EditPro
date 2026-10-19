@@ -36,6 +36,9 @@ export interface ProxySidecar {
   fps: number;
   durationSec: number;
   videoCodec: string;
+  /** Present on proxies written after cache relink shipped. Older sidecars omit it. */
+  sourceSize?: number;
+  sourceMtimeMs?: number;
 }
 
 const PLAYBACK_SCALES: readonly PlaybackScale[] = ['full', 'half', 'quarter'];
@@ -237,7 +240,7 @@ export function parseProxySidecar(raw: string): ProxySidecar | null {
     return null;
   }
   if (typeof record.videoCodec !== 'string' || record.videoCodec.length === 0) return null;
-  return {
+  const sidecar: ProxySidecar = {
     version: record.version,
     sourcePath: record.sourcePath,
     scale: record.scale,
@@ -247,6 +250,13 @@ export function parseProxySidecar(raw: string): ProxySidecar | null {
     durationSec: record.durationSec,
     videoCodec: record.videoCodec,
   };
+  if (typeof record.sourceSize === 'number' && Number.isFinite(record.sourceSize) && record.sourceSize >= 0) {
+    sidecar.sourceSize = record.sourceSize;
+  }
+  if (typeof record.sourceMtimeMs === 'number' && Number.isFinite(record.sourceMtimeMs)) {
+    sidecar.sourceMtimeMs = record.sourceMtimeMs;
+  }
+  return sidecar;
 }
 
 function isPositive(value: unknown): value is number {

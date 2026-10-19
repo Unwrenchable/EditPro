@@ -14,7 +14,7 @@ import {
   mediaTicketIdFromUrl,
   mediaTicketUrl,
   planMediaResponse,
-  trustedMediaOrigin,
+  resolveMediaAllowOrigin,
 } from './mediaAccess.js';
 import {
   assertExportSourceAllowed,
@@ -39,6 +39,8 @@ import {
   probeWithFfmpeg,
   runProxyEncode,
 } from './proxyRunner.js';
+import { clampCacheLimit, defaultAutoProxyRules, recommendProxy } from './cachePolicy.js';
+import { cleanupProxyCache, inspectProxyCache, readCachePolicy, relinkProxyCache, writeCachePolicy } from './cacheManager.js';
 
 export interface ProxyEvent {
   jobId: string;
@@ -88,7 +90,7 @@ function issueTicket(filePath: string, proxyRoot: string): string {
 
 export function registerMediaProtocol(deps: PlaybackDeps): void {
   protocol.handle('media', async (request) => {
-    const origin = trustedMediaOrigin(request.headers.get('origin'), deps.navigation());
+    const origin = resolveMediaAllowOrigin(request.headers.get('origin'), deps.navigation());
     const id = mediaTicketIdFromUrl(request.url);
     const ticketPath = id ? tickets.get(id) : undefined;
     let size = 0;
@@ -207,9 +209,92 @@ export function registerPlaybackIpc(deps: PlaybackDeps): void {
       scale: request.scale,
       proxyRoot,
       paths,
+      sourceSize: info.size,
+      sourceMtimeMs: info.mtimeMs,
     });
 
     return { jobId, status: 'started' as const, mediaUrl: null, width: 0, height: 0, fps: 0, durationSec: 0 };
+  });
+
+  ipcMain.handle('playback:classifyProxy', async (event, payload: unknown) => {
+    deps.assertTrusted(event);
+    const requested = typeof payload === 'string'
+      ? payload
+      : payload && typeof payload === 'object'
+        ? (payload as { sourcePath?: unknown }).sourcePath
+        : undefined;
+    if (typeof requested !== 'string' || requested.length === 0 || requested.length > 4096) {
+      throw new Error('Invalid media path');
+    }
+    const proxyRoot = deps.proxyRoot();
+    const sourcePath = canonicalizePath(requested);
+    assertExportSourceAllowed(sourcePath, proxyRoot, deps.hasReadGrant(sourcePath));
+    const info = await fsPromises.lstat(sourcePath);
+    if (!canReadProxyFile({ isFile: info.isFile(), isSymbolicLink: info.isSymbolicLink() })) {
+      throw new Error('A source video was not found. Re-open it from disk and try again.');
+    }
+    const policy = await readCachePolicy(proxyRoot);
+    const rules = { ...defaultAutoProxyRules(), enabled: policy.auto };
+    const profile = { width: 0, height: 0, durationSec: 0, videoCodec: '', fileBytes: info.size };
+    try {
+      const ffmpegPath = await locateFfmpeg();
+      const probe = parseMediaProbe(await probeWithFfmpeg(ffmpegPath, sourcePath));
+      if (probe) {
+        profile.width = probe.width;
+        profile.height = probe.height;
+        profile.durationSec = probe.durationSec;
+        profile.videoCodec = probe.videoCodec;
+      }
+    } catch {
+      // Resolution rules still run once the monitor knows the frame size.
+    }
+    const decision = recommendProxy(profile, rules);
+    return { ...decision, ...profile };
+  });
+
+  ipcMain.handle('playback:cacheStatus', async (event) => {
+    deps.assertTrusted(event);
+    const status = await inspectProxyCache(deps.proxyRoot());
+    return { ...status, entries: status.entries.slice(0, 40) };
+  });
+
+  ipcMain.handle('playback:setCachePolicy', async (event, payload: unknown) => {
+    deps.assertTrusted(event);
+    const record = payload && typeof payload === 'object' ? (payload as { maxBytes?: unknown; auto?: unknown }) : {};
+    const current = await readCachePolicy(deps.proxyRoot());
+    await writeCachePolicy(deps.proxyRoot(), {
+      maxBytes: typeof record.maxBytes === 'number' ? clampCacheLimit(record.maxBytes) : current.maxBytes,
+      auto: typeof record.auto === 'boolean' ? record.auto : current.auto,
+    });
+    const status = await inspectProxyCache(deps.proxyRoot());
+    return { ...status, entries: status.entries.slice(0, 40) };
+  });
+
+  ipcMain.handle('playback:cleanupCache', async (event) => {
+    deps.assertTrusted(event);
+    const status = await cleanupProxyCache(deps.proxyRoot());
+    return { ...status, entries: status.entries.slice(0, 40) };
+  });
+
+  ipcMain.handle('playback:relinkCache', async (event, payload: unknown) => {
+    deps.assertTrusted(event);
+    if (!Array.isArray(payload) || payload.length > 64) throw new Error('Invalid relink list');
+    const targets: { path: string; size: number; mtimeMs: number }[] = [];
+    for (const entry of payload) {
+      if (typeof entry !== 'string' || entry.length === 0 || entry.length > 4096) continue;
+      const sourcePath = canonicalizePath(entry);
+      if (!deps.hasReadGrant(sourcePath)) continue;
+      try {
+        const info = await fsPromises.lstat(sourcePath);
+        if (!canReadProxyFile({ isFile: info.isFile(), isSymbolicLink: info.isSymbolicLink() })) continue;
+        targets.push({ path: sourcePath, size: info.size, mtimeMs: info.mtimeMs });
+      } catch {
+        // Skip paths that are not regular files.
+      }
+    }
+    const result = await relinkProxyCache(deps.proxyRoot(), targets);
+    const status = await inspectProxyCache(deps.proxyRoot());
+    return { moved: result.moved, skipped: result.skipped, status: { ...status, entries: status.entries.slice(0, 40) } };
   });
 }
 
@@ -231,6 +316,8 @@ async function encodeProxy(options: {
   scale: PlaybackScale;
   proxyRoot: string;
   paths: { finalPath: string; partialPath: string; sidecarPath: string };
+  sourceSize: number;
+  sourceMtimeMs: number;
 }): Promise<void> {
   const { jobId, key, sender, sourcePath, scale, proxyRoot, paths } = options;
   const base = { jobId, sourcePath, scale };
@@ -291,8 +378,16 @@ async function encodeProxy(options: {
       fps: probe.fps,
       durationSec: probe.durationSec,
       videoCodec: probe.videoCodec,
+      sourceSize: options.sourceSize,
+      sourceMtimeMs: options.sourceMtimeMs,
     };
     await fsPromises.writeFile(paths.sidecarPath, serializeProxySidecar(sidecar), 'utf8');
+    const fileName = paths.finalPath.split(/[/\\]/).pop()?.replace(/\.mp4$/, '') ?? '';
+    try {
+      await cleanupProxyCache(proxyRoot, fileName ? [fileName] : []);
+    } catch {
+      // A full disk still leaves the proxy that just finished.
+    }
     const mediaUrl = issueTicket(paths.finalPath, proxyRoot);
     send(sender, {
       ...base,

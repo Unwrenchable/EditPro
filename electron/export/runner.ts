@@ -7,7 +7,7 @@ import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { firstExistingFont, formatCube, isHardwareEncoderFailure, parseEncoderList } from './creative.js';
+import { applyLutStrength, firstExistingFont, formatCube, isHardwareEncoderFailure, parseEncoderList } from './creative.js';
 import {
   buildExportPlan,
   createProgressParser,
@@ -148,10 +148,10 @@ export interface ExportRunResult {
 }
 
 async function writeLutCube(job: ExportJob): Promise<string | null> {
-  if (!job.creative?.lut) return null;
+  if (!job.creative?.lut || job.creative.lutStrength <= 0.001) return null;
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'editpro-lut-'));
   const file = path.join(dir, 'grade.cube');
-  await fs.writeFile(file, formatCube(job.creative.lut), 'utf8');
+  await fs.writeFile(file, formatCube(applyLutStrength(job.creative.lut, job.creative.lutStrength)), 'utf8');
   return file;
 }
 

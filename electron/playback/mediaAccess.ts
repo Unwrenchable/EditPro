@@ -42,6 +42,16 @@ export function trustedMediaOrigin(origin: string | null, options: NavigationOpt
   return isTrustedIpcOrigin(origin, options) ? origin : null;
 }
 
+/**
+ * `<video>` requests for media:// often omit Origin. A missing Origin is
+ * allowed because the ticket is unguessable. A present Origin must be the app.
+ * Returns the Access-Control-Allow-Origin value, or null to refuse the request.
+ */
+export function resolveMediaAllowOrigin(origin: string | null, options: NavigationOptions): string | null {
+  if (origin === null || origin === '' || origin === 'null') return '*';
+  return trustedMediaOrigin(origin, options);
+}
+
 export interface ByteRange {
   start: number;
   end: number;
