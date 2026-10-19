@@ -70,6 +70,7 @@ interface ProTimelineProps {
   peaks?: readonly number[];
   mediaDuration?: number;
   onDropTransition?: (outgoingClipId: string, incomingClipId: string, kind: ClipTransitionKind) => void;
+  onInsertClip?: () => void;
 }
 
 const ProTimeline: React.FC<ProTimelineProps> = ({
@@ -79,7 +80,7 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
   onAddTrack, onSetTrackMuted, onSetTrackLocked, onRemoveTrack, onDeleteClip, onRippleDelete, onSplitClip,
   onRazorAt, onMoveClip, onTrimClip, onRippleTrim, onRollClip, onSlipClip, onSlideClip, onToggleLink,
   onAddKeyframe, onUpdateKeyframe, onRemoveKeyframe,
-  peaks = [], mediaDuration = 0, onDropTransition,
+  peaks = [], mediaDuration = 0, onDropTransition, onInsertClip,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -247,6 +248,16 @@ const ProTimeline: React.FC<ProTimelineProps> = ({
         </button>
         <button className="tl-tool-btn" onClick={() => onRazorAt(currentTime)} title="Razor all unlocked tracks at the playhead (Ctrl+K)" aria-label="Razor at playhead">
           ✂ Razor
+        </button>
+        <button
+          type="button"
+          className="tl-tool-btn"
+          onClick={onInsertClip}
+          disabled={!onInsertClip || duration <= 0}
+          title="Insert the open media at the end of V1 and A1"
+          aria-label="Insert clip on timeline"
+        >
+          Insert
         </button>
         {selectedClipId && (
           <button className="tl-tool-btn" onClick={() => onSplitClip(selectedClipId, currentTime)} title="Split selected clip at playhead" aria-label="Split selected clip at playhead">

@@ -31,7 +31,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:electron-esm": "node scripts/check-electron-esm.mjs"
+    "test:electron-esm": "node scripts/check-electron-esm.mjs",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "build": {
     "appId": "com.editpro.app",
@@ -165,6 +166,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.64.1",
     "@resvg/resvg-js": "^2.6.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

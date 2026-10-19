@@ -181,6 +181,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
       transitions: [...without, { ...placed, id: `xfade_${Date.now()}` }],
     });
   }, [editor, state.clips, state.creative]);
+  const handleInsertClip = useCallback(() => editor.insertLoadedMedia(), [editor]);
   const handleDetectScenes   = useCallback(() => {
     // Simulated scene detection: add markers at regular intervals
     const interval = Math.max(state.duration / 8, 2);
@@ -449,6 +450,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           peaks={waveform.peaks}
           mediaDuration={waveform.duration || state.duration}
           onDropTransition={handleDropTransition}
+          onInsertClip={handleInsertClip}
         />
 
         {state.file && (

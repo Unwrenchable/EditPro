@@ -495,6 +495,69 @@ export function slideTo(
   return next;
 }
 
+/** End of the last clip on a track, or 0 when the track is empty. */
+export function trackEnd(clips: readonly TimelineClip[], trackId: string): number {
+  let end = 0;
+  for (const clip of clips) {
+    if (clip.trackId === trackId && clip.endTime > end) end = clip.endTime;
+  }
+  return end;
+}
+
+export interface InsertProgramClipInput {
+  clips: readonly TimelineClip[];
+  tracks: readonly TimelineTrack[];
+  src: string;
+  inPoint: number;
+  outPoint: number;
+  videoTrackId?: string;
+  audioTrackId?: string;
+  createId: (prefix: string) => string;
+}
+
+/**
+ * Append the open program source to the primary video track and, when that
+ * audio track is free, a linked sound clip of the same range.
+ * Returns null when the range is too short or the video track is locked.
+ */
+export function insertProgramClip(input: InsertProgramClipInput): TimelineClip[] | null {
+  const span = input.outPoint - input.inPoint;
+  if (!input.src || !Number.isFinite(span) || span < MIN_CLIP_DURATION) return null;
+  const videoTrackId = input.videoTrackId ?? 'v1';
+  const audioTrackId = input.audioTrackId ?? 'a1';
+  const videoTrack = input.tracks.find((track) => track.id === videoTrackId && track.type === 'video');
+  if (!videoTrack || videoTrack.locked) return null;
+  const start = trackEnd(input.clips, videoTrackId);
+  const linkId = input.createId('link');
+  const video: TimelineClip = {
+    id: input.createId('clip'),
+    src: input.src,
+    trackId: videoTrackId,
+    startTime: start,
+    endTime: start + span,
+    inPoint: input.inPoint,
+    outPoint: input.outPoint,
+    linkId,
+    keyframes: [],
+  };
+  const next = [...input.clips, video];
+  const audioTrack = input.tracks.find((track) => track.id === audioTrackId && track.type === 'audio');
+  if (audioTrack && !audioTrack.locked) {
+    next.push({
+      id: input.createId('clip'),
+      src: input.src,
+      trackId: audioTrackId,
+      startTime: start,
+      endTime: start + span,
+      inPoint: input.inPoint,
+      outPoint: input.outPoint,
+      linkId,
+      keyframes: [],
+    });
+  }
+  return next;
+}
+
 export function linkPair(clips: readonly TimelineClip[], idA: string, idB: string, linkId: string): TimelineClip[] {
   if (idA === idB) return clips.slice();
   const a = clipOf(clips, idA);

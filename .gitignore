@@ -26,3 +26,6 @@ dist-ssr
 
 dist-electron/
 release/
+e2e/results/
+test-results/
+playwright-report/

@@ -52,8 +52,10 @@ import {
 import {
   clipAtPlayhead,
   createTimelineId,
+  insertProgramClip,
   liftDelete,
   linkPair,
+  MIN_CLIP_DURATION,
   markClipRange,
   moveClipTo,
   razorAtTime,
@@ -774,6 +776,27 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     );
   }, []);
 
+  const insertLoadedMedia = useCallback(() => {
+    setModel((prev) => {
+      const src = prev.mediaPath && prev.mediaPath.length > 0 ? prev.mediaPath : prev.videoUrl;
+      if (!src || prev.duration <= 0) return prev;
+      return commitVideo(prev, (snap) => {
+        const inPoint = Math.max(0, snap.trimStart);
+        const trimmed = snap.trimEnd > inPoint + MIN_CLIP_DURATION ? Math.min(snap.trimEnd, prev.duration) : prev.duration;
+        const clips = insertProgramClip({
+          clips: snap.clips,
+          tracks: snap.tracks,
+          src,
+          inPoint,
+          outPoint: trimmed,
+          createId: createTimelineId,
+        });
+        if (!clips) return snap;
+        return withClipEdit(snap, () => clips);
+      });
+    });
+  }, []);
+
   const addClip = useCallback((trackId: string, src: string, inPoint: number, outPoint: number, startTime: number) => {
     setModel((prev) =>
       commitVideo(prev, (snap) => {
@@ -1160,6 +1183,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     setTrackLocked,
     removeTrack,
     addClip,
+    insertLoadedMedia,
     moveClip,
     splitClip,
     razorAt,

@@ -14,7 +14,7 @@ import {
   mediaTicketIdFromUrl,
   mediaTicketUrl,
   planMediaResponse,
-  trustedMediaOrigin,
+  resolveMediaAllowOrigin,
 } from './mediaAccess.js';
 import {
   assertExportSourceAllowed,
@@ -90,7 +90,7 @@ function issueTicket(filePath: string, proxyRoot: string): string {
 
 export function registerMediaProtocol(deps: PlaybackDeps): void {
   protocol.handle('media', async (request) => {
-    const origin = trustedMediaOrigin(request.headers.get('origin'), deps.navigation());
+    const origin = resolveMediaAllowOrigin(request.headers.get('origin'), deps.navigation());
     const id = mediaTicketIdFromUrl(request.url);
     const ticketPath = id ? tickets.get(id) : undefined;
     let size = 0;
