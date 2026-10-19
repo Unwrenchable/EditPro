@@ -6,7 +6,7 @@ import {
   parseByteRange,
   planMediaResponse,
   trustedMediaOrigin,
-} from './mediaAccess';
+} from './mediaAccess.js';
 
 const dev = { isDev: true, devPort: '5173' };
 const prod = { isDev: false, devPort: '5173' };

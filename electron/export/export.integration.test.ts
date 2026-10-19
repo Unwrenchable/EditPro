@@ -9,8 +9,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_AUDIO, DEFAULT_LUMETRI } from '../../src/utils/videoUtils';
-import { buildExportPlan, type ExportJob } from './plan';
+import { DEFAULT_AUDIO, DEFAULT_LUMETRI } from '../../src/utils/videoUtils.js';
+import { buildExportPlan, type ExportJob } from './plan.js';
 
 const require = createRequire(import.meta.url);
 

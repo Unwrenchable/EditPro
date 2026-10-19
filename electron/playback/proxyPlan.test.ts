@@ -15,7 +15,7 @@ import {
   proxyDimensions,
   proxyOutputPaths,
   serializeProxySidecar,
-} from './proxyPlan';
+} from './proxyPlan.js';
 
 const HEVC_STDERR = `
 Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'phone.mov':

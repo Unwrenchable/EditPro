@@ -30,7 +30,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:electron-esm": "node scripts/check-electron-esm.mjs"
   },
   "build": {
     "appId": "com.editpro.app",

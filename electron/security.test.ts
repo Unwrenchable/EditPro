@@ -16,7 +16,7 @@ import {
   parseAllowedExternalUrl,
   resolveAppStaticPath,
   sanitizeSaveFileName,
-} from './security';
+} from './security.js';
 
 const dev = { isDev: true, devPort: '5173' };
 const prod = { isDev: false, devPort: '5173' };

@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { runUpdateCheck } from './check';
-import { UpdateLookupError, fetchLatestGitHubRelease } from './github';
-import { probeSignature } from './installProfile';
-import { CrashLog, clientErrorMessage, formatLogEntry, nextLogContents } from './logger';
+import { runUpdateCheck } from './check.js';
+import { UpdateLookupError, fetchLatestGitHubRelease } from './github.js';
+import { probeSignature } from './installProfile.js';
+import { CrashLog, clientErrorMessage, formatLogEntry, nextLogContents } from './logger.js';
 import {
   DEFAULT_PREFERENCES,
   applyPreferencePatch,
@@ -24,8 +24,8 @@ import {
   shouldNotify,
   skipVersion,
   updateFromGitHubRelease,
-} from './policy';
-import { readPreferencesFile, writePreferencesFile } from './preferences';
+} from './policy.js';
+import { readPreferencesFile, writePreferencesFile } from './preferences.js';
 
 const release = {
   tag_name: 'v1.2.0',

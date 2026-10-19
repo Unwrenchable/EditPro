@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyHardwareDecodeSwitches, hardwareDecodeFeatures, summarizeDecodeStatus } from './hwDecode';
+import { applyHardwareDecodeSwitches, hardwareDecodeFeatures, summarizeDecodeStatus } from './hwDecode.js';
 
 describe('hardware decode', () => {
   it('enables the platform decoder for HEVC and Linux VAAPI', () => {
