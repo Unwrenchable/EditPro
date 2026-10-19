@@ -127,7 +127,7 @@ describe('audio envelope, mixer, and loudness', () => {
     expect(expression).toContain('min(1\\,t/1.000)');
   });
 
-  it('solos one track and applies normalize makeup in the monitor and the plan', () => {
+  it('solos one track, previews measured makeup, and exports loudnorm', () => {
     const creative = createDefaultCreativeState();
     creative.trackMix = [{ trackId: 'a2', volume: 1, solo: true }];
     creative.loudness = { targetLufs: -14, normalizeOnExport: true, measuredLufs: -20 };
@@ -160,7 +160,9 @@ describe('audio envelope, mixer, and loudness', () => {
     const plan = buildExportPlan(job({ creative, volume: 1 }));
     const graph = plan.args[plan.args.indexOf('-filter_complex') + 1];
     expect(monitor).toBeCloseTo(0.5 * 10 ** (6 / 20));
-    expect(graph).toContain(`volume=${monitor.toFixed(3)}`);
+    expect(graph).toContain('volume=0.500');
+    expect(graph).toContain('loudnorm=I=-14.0');
+    expect(graph.match(/loudnorm=/g)).toHaveLength(1);
   });
 
   it('measures a louder tone as louder than a quiet one', () => {

@@ -430,6 +430,11 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
         duration={state.duration}
         onCreativeChange={editor.setCreative}
         onSetTrackMuted={handleSetTrackMuted}
+        peaks={waveform.peaks}
+        mediaDuration={waveform.duration || state.duration}
+        trimStart={state.trimStart}
+        playbackRate={state.playbackRate}
+        videoRef={videoRef}
       />
 
       {showExportModal && state.file && (

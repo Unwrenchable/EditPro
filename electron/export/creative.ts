@@ -73,12 +73,41 @@ export interface ClipAudioEdit {
   keyframes: VolumeKeyframe[];
 }
 
+export interface TrackEq {
+  /** Shelf / bell gain in dB, -12 to 12. */
+  lowGain: number;
+  midGain: number;
+  /** Bell center, Hz. */
+  midFrequency: number;
+  highGain: number;
+}
+
+export interface TrackCompressor {
+  enabled: boolean;
+  /** Threshold in dB. */
+  threshold: number;
+  ratio: number;
+  /** Attack and release in milliseconds. */
+  attack: number;
+  release: number;
+  /** Makeup gain in dB. */
+  makeup: number;
+}
+
 export interface TrackMix {
   trackId: string;
   /** Linear fader, 0–2. Mute and lock stay on the track itself. */
   volume: number;
   solo: boolean;
+  eq?: TrackEq;
+  compressor?: TrackCompressor;
+  /** 0–100. Mapped to ffmpeg afftdn on export. */
+  noiseReduction?: number;
+  /** Fader ride in output seconds. */
+  automation?: VolumeKeyframe[];
 }
+
+export const LOUDNESS_TARGETS = [-14, -23, -16] as const;
 
 export type ClipTransitionKind =
   | 'cross-dissolve'
@@ -375,13 +404,64 @@ function normalizeClipAudio(value: unknown): ClipAudioEdit | null {
   return { clipId: record.clipId, ...envelope };
 }
 
+export function createDefaultTrackEq(): TrackEq {
+  return { lowGain: 0, midGain: 0, midFrequency: 1000, highGain: 0 };
+}
+
+export function createDefaultCompressor(): TrackCompressor {
+  return { enabled: false, threshold: -18, ratio: 3, attack: 15, release: 150, makeup: 0 };
+}
+
+export function createDefaultTrackMix(trackId: string): TrackMix {
+  return {
+    trackId,
+    volume: 1,
+    solo: false,
+    eq: createDefaultTrackEq(),
+    compressor: createDefaultCompressor(),
+    noiseReduction: 0,
+    automation: [],
+  };
+}
+
+function normalizeTrackEq(value: unknown): TrackEq {
+  const record = asRecord(value);
+  const defaults = createDefaultTrackEq();
+  return {
+    lowGain: clamp(num(record?.lowGain, defaults.lowGain), -12, 12),
+    midGain: clamp(num(record?.midGain, defaults.midGain), -12, 12),
+    midFrequency: clamp(num(record?.midFrequency, defaults.midFrequency), 80, 12000),
+    highGain: clamp(num(record?.highGain, defaults.highGain), -12, 12),
+  };
+}
+
+function normalizeCompressor(value: unknown): TrackCompressor {
+  const record = asRecord(value);
+  const defaults = createDefaultCompressor();
+  return {
+    enabled: record?.enabled === true,
+    threshold: clamp(num(record?.threshold, defaults.threshold), -60, 0),
+    ratio: clamp(num(record?.ratio, defaults.ratio), 1, 20),
+    attack: clamp(num(record?.attack, defaults.attack), 0.1, 200),
+    release: clamp(num(record?.release, defaults.release), 5, 2000),
+    makeup: clamp(num(record?.makeup, defaults.makeup), 0, 24),
+  };
+}
+
 function normalizeTrackMix(value: unknown): TrackMix | null {
   const record = asRecord(value);
   if (!record || typeof record.trackId !== 'string' || !record.trackId) return null;
+  const automation = Array.isArray(record.automation)
+    ? record.automation.map(normalizeKeyframe).filter((item): item is VolumeKeyframe => item !== null)
+    : [];
   return {
     trackId: record.trackId,
     volume: clamp(num(record.volume, 1), 0, 2),
     solo: record.solo === true,
+    eq: normalizeTrackEq(record.eq),
+    compressor: normalizeCompressor(record.compressor),
+    noiseReduction: clamp(num(record.noiseReduction, 0), 0, 100),
+    automation,
   };
 }
 
@@ -535,6 +615,12 @@ function sortedKeys(keyframes: readonly VolumeKeyframe[]): VolumeKeyframe[] {
   return [...keyframes].sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
 }
 
+/** Linear gain of a fader ride. Empty automation is unity. */
+export function sampleAutomation(keyframes: readonly VolumeKeyframe[] | undefined, time: number): number {
+  if (!keyframes || keyframes.length === 0) return 1;
+  return interpolateGain(keyframes, time);
+}
+
 function interpolateGain(keyframes: readonly VolumeKeyframe[], time: number): number {
   const keys = sortedKeys(keyframes);
   if (keys.length === 0) return 1;
@@ -612,9 +698,49 @@ export function volumeFilter(audio: ProgramAudio, duration: number, mixGain: num
   return `volume=volume='${volumeExpression(audio, duration, mixGain)}':eval=frame`;
 }
 
+/** EQ, compressor, and noise reduction for one track. Neutral settings add nothing. */
+export function trackInsertFilters(mix: TrackMix | undefined): string[] {
+  if (!mix) return [];
+  const eq = mix.eq ?? createDefaultTrackEq();
+  const compressor = mix.compressor ?? createDefaultCompressor();
+  const filters: string[] = [];
+  const reduction = mix.noiseReduction ?? 0;
+  if (reduction > 0) filters.push(`afftdn=nr=${clamp(reduction / 5, 0.01, 20).toFixed(2)}:nf=-25`);
+  if (Math.abs(eq.lowGain) > 0.05) filters.push(`lowshelf=f=120:t=q:w=0.7:g=${eq.lowGain.toFixed(2)}`);
+  if (Math.abs(eq.midGain) > 0.05) {
+    filters.push(`equalizer=f=${Math.round(eq.midFrequency)}:t=q:w=1:g=${eq.midGain.toFixed(2)}`);
+  }
+  if (Math.abs(eq.highGain) > 0.05) filters.push(`highshelf=f=8000:t=q:w=0.7:g=${eq.highGain.toFixed(2)}`);
+  if (compressor.enabled) {
+    filters.push(
+      `acompressor=threshold=${compressor.threshold.toFixed(1)}dB:ratio=${compressor.ratio.toFixed(2)}:attack=${compressor.attack.toFixed(1)}:release=${compressor.release.toFixed(0)}:makeup=${compressor.makeup.toFixed(1)}`,
+    );
+  }
+  return filters;
+}
+
+/** Fader automation as a volume expression. Times are output seconds. */
+export function automationFilter(keyframes: readonly VolumeKeyframe[] | undefined, duration: number): string | null {
+  if (!keyframes || keyframes.length === 0) return null;
+  return volumeFilter({ volume: 1, fadeIn: 0, fadeOut: 0, keyframes: [...keyframes] }, duration, 1);
+}
+
+/** Peak meter 0–1 from a waveform column, scaled by the fader ride. */
+export function meterLevel(
+  peaks: readonly number[],
+  mediaDuration: number,
+  time: number,
+  gain: number,
+): number {
+  if (peaks.length === 0 || !(mediaDuration > 0) || gain <= 0) return 0;
+  const index = Math.round(clamp(time / mediaDuration, 0, 1) * (peaks.length - 1));
+  return clamp((peaks[index] ?? 0) * gain, 0, 1);
+}
+
 /**
  * Makeup gain that brings a measured integrated loudness onto the target.
- * Preview multiplies the monitor by this; export multiplies the same number.
+ * The monitor uses it as a stand-in. Export applies ffmpeg loudnorm instead,
+ * so the two are not multiplied together.
  */
 export function normalizeLinearGain(loudness: LoudnessSettings): number {
   if (!loudness.normalizeOnExport || loudness.measuredLufs === null) return 1;
@@ -641,7 +767,9 @@ export function monitorLinearGain(input: {
   const local = (input.sourceTime - input.trimStart) / rate;
   const duration = Math.max(0, (input.trimEnd - input.trimStart) / rate);
   const envelope = envelopeGain(input.creative.programAudio, local, duration);
-  return clamp(input.master * fader * envelope * normalizeLinearGain(input.creative.loudness), 0, 4);
+  const entry = input.creative.trackMix.find((item) => item.trackId === trackId);
+  const ride = sampleAutomation(entry?.automation, local);
+  return clamp(input.master * fader * ride * envelope * normalizeLinearGain(input.creative.loudness), 0, 4);
 }
 
 export interface TitlePlacement {

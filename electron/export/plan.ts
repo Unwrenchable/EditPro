@@ -17,8 +17,9 @@ import {
   liftGammaGainFilter,
   lut3dFilter,
   normalizeCreativeState,
-  normalizeLinearGain,
+  automationFilter,
   selectVideoEncoder,
+  trackInsertFilters,
   softwareCodecName,
   trackFader,
   volumeFilter,
@@ -864,7 +865,12 @@ export function lumetriFilters(lut: ExportLumetri): string[] {
 }
 
 /** Essential Sound → ffmpeg audio filters. Loudness is applied once at the end. */
-export function audioProcessFilters(audio: ExportAudio, volume: number, rate: number): string[] {
+export function audioProcessFilters(
+  audio: ExportAudio,
+  volume: number,
+  rate: number,
+  options?: { skipLoudnorm?: boolean },
+): string[] {
   const filters: string[] = [];
   const tempo = atempoChain(rate);
   if (tempo) filters.push(tempo);
@@ -888,7 +894,7 @@ export function audioProcessFilters(audio: ExportAudio, volume: number, rate: nu
     audio.category === 'dialogue' || audio.category === 'music'
       ? audio.loudness !== 0 || audio.noiseReduction > 0 || audio.clarity > 0 || audio.deReverb > 0 || audio.lowCut || audio.autoDuck
       : false;
-  if (wantsLoudnorm) {
+  if (wantsLoudnorm && !options?.skipLoudnorm) {
     const base = audio.category === 'music' ? -14 : -16;
     const target = clamp(base + audio.loudness, -31, -5);
     filters.push(`loudnorm=I=${target.toFixed(1)}:TP=-1.5:LRA=11`);
@@ -1040,12 +1046,22 @@ function audioBody(
   const trackId = clipId
     ? (job.clips.find((clip) => clip.clipId === clipId)?.trackId ?? 'a1')
     : 'a1';
+  const mixEntry = job.creative.trackMix.find((item) => item.trackId === trackId);
   const fader = trackFader(mixTracks(job), job.creative.trackMix, trackId);
-  const mix = clamp(job.volume * fader * normalizeLinearGain(job.creative.loudness), 0, 4);
+  const normalize = job.creative.loudness.normalizeOnExport;
+  // loudnorm owns the LUFS target. The measured makeup stays on the monitor.
+  const mix = clamp(job.volume * fader, 0, 4);
   const curve = hasGainCurve(envelope) ? volumeFilter(envelope, duration, mix) : null;
   const constant = curve ? 1 : clamp(mix * envelope.volume, 0, 4);
-  const process = audioProcessFilters(job.audio, constant, rate);
-  return ['asetpts=PTS-STARTPTS', ...process, curve, ...motionAudio].filter((part): part is string => Boolean(part)).join(',');
+  const process = audioProcessFilters(job.audio, constant, rate, { skipLoudnorm: normalize });
+  const inserts = trackInsertFilters(mixEntry);
+  const automation = automationFilter(mixEntry?.automation, duration);
+  const loudnorm = normalize
+    ? `loudnorm=I=${clamp(job.creative.loudness.targetLufs, -36, -5).toFixed(1)}:TP=-1.5:LRA=11`
+    : null;
+  return ['asetpts=PTS-STARTPTS', ...inserts, ...process, curve, automation, ...motionAudio, loudnorm]
+    .filter((part): part is string => Boolean(part))
+    .join(',');
 }
 
 function codecArgs(job: ExportJob, withAudio: boolean): string[] {
