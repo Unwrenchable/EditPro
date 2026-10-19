@@ -3,8 +3,9 @@ import LumetriColorPanel from './LumetriColorPanel';
 import EssentialSoundPanel from './EssentialSoundPanel';
 import type {
   LumetriColor, LumetriCurves, AudioTrackSettings, AudioCategory,
-  AutoReframeAspect, VideoExportOptions,
+  AutoReframeAspect, VideoExportOptions, VideoTransition,
 } from '../../types';
+import { PLATFORM_PRESETS, TRANSITION_OPTIONS } from '../../utils/video/exportPlan';
 
 type MainPanel = 'lumetri' | 'sound' | 'effects' | 'ai' | 'export';
 
@@ -15,16 +16,6 @@ const MAIN_PANELS: { id: MainPanel; label: string; icon: string }[] = [
   { id: 'ai',       label: 'AI',      icon: '🤖' },
   { id: 'export',   label: 'Export',  icon: '📤' },
 ];
-
-const EXPORT_PLATFORMS: { id: VideoExportOptions['platform']; label: string; res: VideoExportOptions['resolution']; fps: 24|30|60; format: VideoExportOptions['format'] }[] = [
-  { id: 'youtube',  label: 'YouTube 1080p',   res: '1080p', fps: 30, format: 'mp4'  },
-  { id: 'tiktok',   label: 'TikTok / Reels',  res: '1080p', fps: 30, format: 'mp4'  },
-  { id: 'vimeo',    label: 'Vimeo HD',         res: '1080p', fps: 24, format: 'mp4'  },
-  { id: 'twitter',  label: 'Twitter / X',      res: '720p',  fps: 30, format: 'mp4'  },
-  { id: 'custom',   label: 'Custom',           res: '1080p', fps: 30, format: 'mp4'  },
-];
-
-const TRANSITIONS = ['Cut', 'Fade', 'Dissolve', 'Cross-Fade', 'Wipe', 'Slide', 'Zoom', 'Dip to Black'];
 
 const AUTO_REFRAME_ASPECTS: { value: AutoReframeAspect; label: string }[] = [
   { value: 'original', label: '16:9 Original' },
@@ -46,22 +37,24 @@ interface VideoAdjustmentPanelProps {
   onSetAutoReframe: (aspect: AutoReframeAspect) => void;
   onResetLumetri: () => void;
   onOpenVideo: () => void;
-  onExport: () => void;
+  onExport: (prefs: { platform: VideoExportOptions['platform']; quality: number }) => void;
   onDetectScenes: () => void;
+  transition: VideoTransition;
+  onTransitionChange: (transition: VideoTransition) => void;
 }
 
 const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
   lumetri, audio, autoReframe, videoUrl,
   onLumetriBasicChange, onCurvesChange, onColorWheelChange, onAudioChange,
   onSetAutoReframe, onResetLumetri, onOpenVideo, onExport, onDetectScenes,
+  transition, onTransitionChange,
 }) => {
   const disabled = !videoUrl;
   const [activePanel, setActivePanel] = useState<MainPanel>('lumetri');
   const [exportPlatform, setExportPlatform] = useState<VideoExportOptions['platform']>('youtube');
   const [exportQuality, setExportQuality] = useState(90);
-  const [appliedTransition, setAppliedTransition] = useState<string | null>(null);
 
-  const selectedPlatformDef = EXPORT_PLATFORMS.find((p) => p.id === exportPlatform)!;
+  const selectedPlatformDef = PLATFORM_PRESETS.find((p) => p.id === exportPlatform) ?? PLATFORM_PRESETS[0];
 
   return (
     <aside className="right-panel">
@@ -105,20 +98,20 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
         <div className="panel-body">
           <p className="section-subtitle">Transitions</p>
           <div className="effects-grid">
-            {TRANSITIONS.map((t) => (
+            {TRANSITION_OPTIONS.map((t) => (
               <button
-                key={t}
-                className={`effect-btn${appliedTransition === t ? ' effect-btn-active' : ''}`}
+                key={t.id}
+                className={`effect-btn${transition === t.id ? ' effect-btn-active' : ''}`}
                 disabled={disabled}
-                onClick={() => setAppliedTransition(appliedTransition === t ? null : t)}
+                onClick={() => onTransitionChange(transition === t.id && t.id !== 'cut' ? 'cut' : t.id)}
               >
-                {t}
+                {t.label}
               </button>
             ))}
           </div>
-          {appliedTransition && (
+          {transition !== 'cut' && (
             <div className="info-box" style={{ marginTop: 10 }}>
-              <strong>{appliedTransition}</strong> transition applied at In/Out points.
+              <strong>{TRANSITION_OPTIONS.find((t) => t.id === transition)?.label}</strong> is rendered at the In and Out points when you export.
             </div>
           )}
           <p className="section-subtitle" style={{ marginTop: 12 }}>Adjustment Layer</p>
@@ -171,7 +164,7 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
           </button>
           <p className="section-subtitle">Platform Preset</p>
           <div className="export-platform-grid">
-            {EXPORT_PLATFORMS.map((p) => (
+            {PLATFORM_PRESETS.map((p) => (
               <button
                 key={p.id}
                 className={`export-preset-btn${exportPlatform === p.id ? ' active' : ''}`}
@@ -184,9 +177,10 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
           </div>
           <div className="info-box" style={{ marginTop: 10 }}>
             <p>
-              <strong>Resolution:</strong> {selectedPlatformDef.res}<br />
-              <strong>Frame Rate:</strong> {selectedPlatformDef.fps} fps<br />
+              <strong>Resolution:</strong> {selectedPlatformDef.resolution}<br />
+              <strong>Frame Rate:</strong> {selectedPlatformDef.frameRate} fps<br />
               <strong>Format:</strong> {selectedPlatformDef.format.toUpperCase()}
+              {selectedPlatformDef.aspect ? <><br /><strong>Frame:</strong> {selectedPlatformDef.aspect}</> : null}
             </p>
           </div>
           <div className="slider-row" style={{ marginTop: 10 }}>
@@ -201,11 +195,14 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
           <button
             className="btn-primary"
             style={{ width: '100%', marginTop: 12 }}
-            onClick={onExport}
+            onClick={() => onExport({ platform: exportPlatform, quality: exportQuality })}
             disabled={disabled}
           >
             ↓ Export Video
           </button>
+          <p className="panel-hint" style={{ textAlign: 'left' }}>
+            Writes a new file with trim, color, sound, and transitions. Progress and cancel are in the export dialog.
+          </p>
         </div>
       )}
     </aside>
