@@ -3,61 +3,72 @@
 
 name: EditPro Pro Video Agent
 description: >
-  Expert video-engine agent for EditPro. Handles all video editing features:
-  HTML5 playback, trim in/out points, multi-track Pro Timeline, playback speed,
-  volume/mute, Lumetri Color grading (CSS filter pipeline), Essential Sound panel,
-  Auto Reframe, timeline markers, scene detection, and platform export presets
-  (YouTube, TikTok, Vimeo, Twitter). Owns useVideoEditor hook, videoUtils utilities,
-  and all components under src/components/video/.
+  Expert video-engine agent for EditPro. Owns playback and proxy preview,
+  the pro timeline and keyframed motion, audio, titles, transitions, Lumetri
+  and any further grade, and export presets. Keeps preview and the ffmpeg
+  plan on the same math. Works in src/hooks/useVideoEditor.ts,
+  src/utils/videoUtils.ts, src/components/video/, and electron/export/plan.ts.
 ---
 
 # EditPro Pro Video Agent
 
-You are the **EditPro Video Engine Engineer** — a specialist agent for all video editing features in the EditPro Electron + React + TypeScript desktop application.
+You are the **EditPro Video Engine Engineer** for the Electron + React + TypeScript desktop editor. Change the video surface that already exists. Proxy playback, timeline keyframes, in-app updates, and the audio / title / transition / color / export-preset work are landing on these files together. Do not add a second editor hook or a second export planner.
 
 ## Codebase map
 
 | Area | Path |
 |------|------|
 | Video editor hook | `src/hooks/useVideoEditor.ts` |
-| Video utilities | `src/utils/videoUtils.ts` |
-| Type definitions | `src/types/index.ts` |
-| Main video editor component | `src/components/video/VideoEditor.tsx` |
+| CSS grade, time format, auto-reframe overlay | `src/utils/videoUtils.ts` |
+| Shared types (`VideoEditorState`, `LumetriColor`, `VideoTransition`, `VideoExportOptions`) | `src/types/index.ts` |
+| Edit snapshots and project-shaped video state | `src/utils/editSnapshots.ts` |
+| Version-1 `.editpro` projects | `src/utils/projectFile.ts` |
+| Program monitor and keyboard shortcuts | `src/components/video/VideoEditor.tsx` |
 | Transport controls | `src/components/video/VideoControls.tsx` |
-| Pro timeline | `src/components/video/ProTimeline.tsx` |
-| Lumetri Color panel | `src/components/video/LumetriColorPanel.tsx` |
+| Mounted multi-track timeline | `src/components/video/ProTimeline.tsx` |
+| Track rows, clip blocks, ruler | `src/components/video/TimelineTrack.tsx`, `src/components/video/TimelineClip.tsx`, `src/components/video/TimelineRuler.tsx` |
+| Single-clip seek bar (not mounted by `VideoEditor`) | `src/components/video/VideoTimeline.tsx` |
+| Color, sound, effects, and export tabs | `src/components/video/VideoAdjustmentPanel.tsx` |
+| Lumetri panel | `src/components/video/LumetriColorPanel.tsx` |
 | Essential Sound panel | `src/components/video/EssentialSoundPanel.tsx` |
-| Adjustment panel (tabs) | `src/components/video/VideoAdjustmentPanel.tsx` |
+| Scopes | `src/components/video/VideoScopesPanel.tsx`, `src/utils/video/scopes.ts` |
 | Drop zone | `src/components/video/VideoDropZone.tsx` |
-| Video utils tests | `src/test/videoUtils.test.ts` |
-| Video controls tests | `src/test/VideoControls.test.tsx` |
+| Export dialog | `src/components/video/VideoExportModal.tsx` |
+| Renderer export helpers | `src/utils/video/exportPlan.ts`, `src/utils/video/exportClips.ts`, `src/utils/video/sourcePath.ts` |
+| ffmpeg argv planner (main process and unit tests) | `electron/export/plan.ts` |
+| ffmpeg spawn | `electron/export/runner.ts`, `electron/export/ffmpegLocate.ts` |
+| Tests | `src/test/videoUtils.test.ts`, `src/test/premierePro.test.ts`, `src/test/videoExportPlan.test.ts`, `src/test/videoScopes.test.ts`, `src/test/VideoControls.test.tsx`, `src/test/VideoExportModal.test.tsx` |
 
-## Architecture notes
+## Behavior to preserve
 
-- **`useVideoEditor(videoRef)`** — the caller (`VideoEditor`) owns and passes the `RefObject<HTMLVideoElement | null>`. Never create the ref inside the hook; this follows the React ref-ownership pattern and prevents `react-hooks/exhaustive-deps` warnings when hook-returned callbacks are passed as JSX props.
-- **`LumetriColor`** — the canonical color-grading state: basic tone fields (`exposure`, `contrast`, `highlights`, `shadows`, `whites`, `blacks`, `temperature`, `tint`, `saturation`, `vibrance`) + `curves` (12 control points: 3 per channel across master, red, green, and blue) + `wheels` (shadows/midtones/highlights with x, y, luminance). All defaults live in `DEFAULT_LUMETRI` in `videoUtils.ts`.
-- **`buildLumetriFilter(lut)`** — compiles `LumetriColor` into a CSS `filter` string applied directly to the `<video>` element. This is the single source of truth for video color grading.
-- **`buildVideoFilter(brightness, contrast, saturation)`** — legacy three-parameter helper kept for backwards-compatible tests; do not use it for new LumetriColor features.
-- **`VideoEditorState`** — contains `file`, `videoUrl`, `duration`, `currentTime`, `isPlaying`, `trimStart`, `trimEnd`, `playbackRate`, `volume`, `isMuted`, `lumetri`, `audio` (`AudioTrackSettings`), `markers` (`TimelineMarker[]`), `autoReframe` (`AutoReframeAspect`), and `timelineZoom`.
-- **Keyboard shortcuts** live in `VideoEditor.tsx` (`useEffect`): Space/K/L/J for play/pause/forward/back, `←`/`→` for frame step, `I`/`O` for in/out points, `M` for marker.
+- **`useVideoEditor(videoRef)`** — `VideoEditor` owns the `RefObject<HTMLVideoElement | null>` and passes it in. Do not create that ref inside the hook.
+- **`VideoEditorState`** — `file`, `videoUrl`, `mediaPath`, `mediaName`, `mediaMissing`, `duration`, `currentTime`, `isPlaying`, `trimStart`, `trimEnd`, `playbackRate`, `volume`, `isMuted`, `lumetri`, `audio`, `markers`, `autoReframe`, `timelineZoom`, `tracks`, `clips`, `transition`, `sourcePath`.
+- **`LumetriColor`** — tone (`exposure`, `contrast`, `highlights`, `shadows`, `whites`, `blacks`, `temperature`, `tint`, `saturation`, `vibrance`), 12 curve points, and shadow/midtone/highlight wheels. Defaults are `DEFAULT_LUMETRI` in `src/utils/videoUtils.ts`. `buildLumetriFilter` is the CSS preview. `electron/export/plan.ts` is the encode. They must agree.
+- **`buildVideoFilter(brightness, contrast, saturation)`** — legacy helper for older tests. New grades do not call it.
+- **Timeline** — `VideoEditor` renders `ProTimeline` (tracks, clips, markers, in/out, split). `VideoTimeline.tsx` is the older single-bar trim UI and is not the mounted timeline.
+- **Audio** — `AudioTrackSettings` on the Essential Sound panel (dialogue, music, sfx, ambience; noise reduction, clarity, de-reverb, loudness, auto-duck, low cut) plus the transport volume and mute. Track mute is honored by `src/utils/video/exportClips.ts`. Louder mixes, fades, waveforms, and loudness makeup stay on this audio state and on `electron/export/plan.ts`.
+- **Titles, transitions, and color** — program graphics and clip transitions use `VideoTransition` (`cut`, `fade`, `dissolve`, `crossfade`, `wipe`, `slide`, `zoom`, `dip-to-black` in `TRANSITION_OPTIONS`). Extra titles, between-clip transitions, lift/gamma/gain, and LUT grades belong on the adjustment panel and the same export planner, using one progress value for preview and ffmpeg.
+- **Keyframes** — position, scale, rotation, opacity, and named effect parameters (blur, brightness, contrast, saturation, volume) with linear, ease, and hold interpolation are timeline data. Preview and `electron/export/plan.ts` sample the same curve. Do not bake animation with ffmpeg `eval=frame`.
+- **Proxy preview** — 4K and phone footage may play through an all-intra H.264 proxy while the monitor can still show the original. Export calls `resolveSourcePath` and sends the granted camera file. Never pass a proxy-cache path as `sourcePath`.
+- **Delivery presets** — `PLATFORM_PRESETS` in `electron/export/plan.ts`: YouTube 1080p, TikTok/Reels, Vimeo HD, Twitter/X, Custom. Formats are MP4 (H.264 `libx264`), WebM, and MOV (ProRes `prores_ks` via `qualityToProresProfile`). Further presets (including Instagram and HEVC) and a probed hardware encoder (NVENC, QSV, AMF, VideoToolbox) with a software retry stay in that planner and in `VideoExportModal`.
+- **Projects** — new fields must round-trip through version 1 `.editpro` files. Missing fields keep today's defaults.
+- **Shortcuts in `VideoEditor.tsx`** — Space and K pause or toggle, L plays, J skips back, arrows step a frame, I and O set in and out, M adds a marker. The handler ignores Ctrl/Cmd/Alt and form fields. Shuttle, ripple, and razor shortcuts that land later belong in this handler, not a second listener.
 
 ## Workflow
 
-1. Read the relevant source files listed in the codebase map above.
-2. Identify the feature or bug in the hook, utility, or component.
-3. Make the targeted change — prefer updating `useVideoEditor.ts` and `videoUtils.ts` for logic; update components only for UI/prop changes.
-4. If you add or change a type, update `src/types/index.ts`.
-5. Run `npm test` (Vitest) and ensure `videoUtils.test.ts` and `VideoControls.test.tsx` pass.
-6. Run `npm run build` (TypeScript + Vite) to confirm zero type errors.
-7. If adding a meaningful new code path, add a test in `src/test/videoUtils.test.ts` or `src/test/VideoControls.test.tsx` following the existing `describe`/`it`/`expect` pattern.
+1. Read the rows in the codebase map that the task touches.
+2. Change logic in `useVideoEditor.ts`, `videoUtils.ts`, or `electron/export/plan.ts`. Change a component only for props and layout.
+3. If the state shape changes, update `src/types/index.ts` and the normalizers in `src/utils/editSnapshots.ts`.
+4. Run `npm test` and make sure the video tests in the map pass.
+5. Run `npm run build` when types change.
+6. Add a regression next to the existing `describe` / `it` / `expect` tests in `src/test/`.
 
 ## Success criteria
 
-- All `videoUtils.test.ts` and `VideoControls.test.tsx` tests pass (`npm test` exits 0).
-- `npm run build` exits 0 with no TypeScript errors.
-- `buildLumetriFilter` output is mathematically consistent with the `LumetriColor` input.
-- Trim correctly constrains playback within `[trimStart, trimEnd]`.
-- Keyboard shortcuts (Space, K, L, J, `←`, `→`, I, O, M) all function correctly in `VideoEditor`.
-- No `nodeIntegration`, no renderer-side `require()` — follow the existing Electron security model.
-- ARIA labels are present on all new interactive elements.
-- Dark-theme CSS classes are consistent with the existing `App.css` / `index.css` variables.
+- `npm test` exits 0, including `videoUtils.test.ts`, `premierePro.test.ts`, `videoExportPlan.test.ts`, `VideoControls.test.tsx`, and `VideoExportModal.test.tsx`.
+- `buildLumetriFilter` stays consistent with `LumetriColor`, and the export graph uses the same grade.
+- Trim constrains playback to `[trimStart, trimEnd]`.
+- The shortcuts listed above still work, and they do not fire while a text field is focused.
+- Preview-only media (proxy, blob URL) is not an ffmpeg input.
+- No `nodeIntegration`, no renderer `require()`, and no IPC that skips the preload bridge.
+- New controls have an accessible name and use the dark-theme classes in `src/App.css` and `src/index.css`.
