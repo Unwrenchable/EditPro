@@ -19,6 +19,7 @@ import { monitorScale, resolutionLabel, selectPreviewUrl } from '../../playback/
 import { usePreviewSrc } from '../../playback/usePreviewSrc';
 import { useProxyMedia } from '../../playback/useProxyMedia';
 import PlaybackSettings from './PlaybackSettings';
+import InterchangePanel from './InterchangePanel';
 import type { MagicMoviePlan, VideoEditorState, VideoExportOptions } from '../../types';
 
 function previewLook(state: VideoEditorState, baseFilter: string): {
@@ -338,6 +339,13 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
             <VideoScopesPanel videoRef={videoRef} />
           </div>
         )}
+
+        <InterchangePanel
+          tracks={state.tracks}
+          clips={state.clips}
+          sequenceName={state.mediaName?.replace(/\.[^.]+$/, '') || 'Sequence'}
+          onReplace={editor.replaceTimeline}
+        />
 
         {/* ── Pro Timeline ── */}
         <ProTimeline

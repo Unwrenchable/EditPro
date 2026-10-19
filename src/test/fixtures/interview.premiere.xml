@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<xmeml version="4">
+  <sequence>
+    <name>INTERVIEW</name>
+    <duration>96</duration>
+    <rate>
+      <timebase>24</timebase>
+      <ntsc>FALSE</ntsc>
+    </rate>
+    <timecode>
+      <rate>
+        <timebase>24</timebase>
+        <ntsc>FALSE</ntsc>
+      </rate>
+      <string>00:00:00:00</string>
+      <frame>0</frame>
+      <displayformat>NDF</displayformat>
+    </timecode>
+    <media>
+      <video>
+        <format>
+          <samplecharacteristics>
+            <rate>
+              <timebase>24</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <width>1920</width>
+            <height>1080</height>
+          </samplecharacteristics>
+        </format>
+        <track>
+          <name>V1</name>
+          <clipitem id="clipitem-1">
+            <name>interview.mov</name>
+            <start>0</start>
+            <end>96</end>
+            <in>86400</in>
+            <out>86496</out>
+            <file id="file-1">
+              <name>interview.mov</name>
+              <pathurl>file:///films/interview.mov</pathurl>
+            </file>
+          </clipitem>
+        </track>
+      </video>
+      <audio>
+        <track>
+          <name>A1</name>
+          <clipitem id="clipitem-2">
+            <name>room.wav</name>
+            <start>0</start>
+            <end>96</end>
+            <in>86400</in>
+            <out>86496</out>
+            <file id="file-2">
+              <name>room.wav</name>
+              <pathurl>file://localhost/films/room.wav</pathurl>
+            </file>
+          </clipitem>
+        </track>
+      </audio>
+    </media>
+  </sequence>
+</xmeml>

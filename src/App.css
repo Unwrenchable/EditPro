@@ -2729,3 +2729,34 @@
 .export-modal {
   width: min(520px, 94vw);
 }
+
+.interchange-panel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 8px 16px;
+  background: #141414;
+  border-top: 1px solid #2a2a2a;
+}
+
+.interchange-panel h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #d0d0d0;
+}
+
+.interchange-drop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #c8c8c8;
+}
+
+.interchange-message {
+  font-size: 12px;
+  color: #b7b7b7;
+}

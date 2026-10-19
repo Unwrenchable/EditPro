@@ -751,6 +751,25 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     );
   }, []);
 
+  const replaceTimeline = useCallback((tracks: TimelineTrack[], clips: TimelineClip[]) => {
+    setModel((prev) =>
+      commitVideo(prev, (snap) => {
+        const nextTracks = tracks.length > 0 ? tracks : snap.tracks;
+        const nextClips = clips.map((clip) => ({
+          ...clip,
+          linkId: clip.linkId ?? null,
+          keyframes: clip.keyframes ?? [],
+        }));
+        return {
+          ...snap,
+          tracks: nextTracks,
+          clips: nextClips,
+          creative: reconcileCreative(snap.creative, snap.clips, nextClips),
+        };
+      }),
+    );
+  }, []);
+
   const addClip = useCallback((trackId: string, src: string, inPoint: number, outPoint: number, startTime: number) => {
     setModel((prev) =>
       commitVideo(prev, (snap) => {
@@ -1113,6 +1132,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     setTransition,
     setTimelineZoom,
     addTrack,
+    replaceTimeline,
     setTrackMuted,
     setTrackLocked,
     removeTrack,
