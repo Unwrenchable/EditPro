@@ -23,6 +23,40 @@ export interface VideoExportResult {
   message?: string;
 }
 
+export type PlaybackScale = 'full' | 'half' | 'quarter';
+
+export interface ProxyPlaybackEvent {
+  jobId: string;
+  sourcePath: string;
+  scale: PlaybackScale;
+  type: 'progress' | 'done' | 'cancelled' | 'error';
+  percent?: number;
+  mediaUrl?: string;
+  width?: number;
+  height?: number;
+  fps?: number;
+  durationSec?: number;
+  message?: string;
+}
+
+export interface ProxyStartResult {
+  jobId: string;
+  status: 'ready' | 'started' | 'cancelled' | 'error';
+  mediaUrl: string | null;
+  width: number;
+  height: number;
+  fps: number;
+  durationSec: number;
+  message?: string;
+}
+
+export interface DecodeInfo {
+  videoDecode: string;
+  hardware: boolean;
+  label: string;
+  platform: string;
+}
+
 export type EditProMenuChannel =
   | 'menu:openProject'
   | 'menu:openImage'
@@ -68,6 +102,10 @@ export interface EditProBridge {
   noteSaved(projectPath: string): Promise<boolean>;
   discardRecovery(): Promise<boolean>;
   markCleanShutdown(): Promise<boolean>;
+  getDecodeInfo(): Promise<DecodeInfo>;
+  startProxy(request: { sourcePath: string; scale: PlaybackScale }): Promise<ProxyStartResult>;
+  cancelProxy(jobId: string): Promise<boolean>;
+  onProxyEvent(listener: (event: ProxyPlaybackEvent) => void): () => void;
   getVersion(): Promise<string>;
   getPlatform(): Promise<string>;
   openExternal(url: string): Promise<boolean>;

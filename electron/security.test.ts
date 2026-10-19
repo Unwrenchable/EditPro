@@ -234,6 +234,8 @@ describe('content security policy', () => {
     expect(meta).not.toContain('frame-ancestors');
     expect(meta).toContain("script-src 'self'");
     expect(production).toContain('blob:');
+    expect(production).toContain("media-src 'self' data: blob: media:");
+    expect(production).not.toMatch(/script-src[^;]*media:/);
     expect(production).not.toMatch(/script-src[^;]*data:/);
 
     expect(development).toContain("script-src 'self' 'unsafe-inline'");

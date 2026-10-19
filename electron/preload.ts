@@ -17,6 +17,31 @@ export interface VideoExportEvent {
   message?: string;
 }
 
+export interface ProxyPlaybackEvent {
+  jobId: string;
+  sourcePath: string;
+  scale: 'full' | 'half' | 'quarter';
+  type: 'progress' | 'done' | 'cancelled' | 'error';
+  percent?: number;
+  mediaUrl?: string;
+  width?: number;
+  height?: number;
+  fps?: number;
+  durationSec?: number;
+  message?: string;
+}
+
+export interface ProxyStartResult {
+  jobId: string;
+  status: 'ready' | 'started' | 'cancelled' | 'error';
+  mediaUrl: string | null;
+  width: number;
+  height: number;
+  fps: number;
+  durationSec: number;
+  message?: string;
+}
+
 const MENU_CHANNELS = [
   'menu:openProject',
   'menu:openImage',
@@ -136,6 +161,25 @@ contextBridge.exposeInMainWorld('editpro', {
   discardRecovery: (): Promise<boolean> => ipcRenderer.invoke('session:discardRecovery'),
 
   markCleanShutdown: (): Promise<boolean> => ipcRenderer.invoke('session:markClean'),
+
+  /** GPU video-decode status after hardware-decode switches are applied. */
+  getDecodeInfo: (): Promise<{ videoDecode: string; hardware: boolean; label: string; platform: string }> =>
+    ipcRenderer.invoke('playback:decodeInfo'),
+
+  /**
+   * Build or reuse a low-resolution proxy for a granted source.
+   * Progress and completion arrive on onProxyEvent. Export keeps using the original.
+   */
+  startProxy: (request: { sourcePath: string; scale: 'full' | 'half' | 'quarter' }): Promise<ProxyStartResult> =>
+    ipcRenderer.invoke('playback:startProxy', request),
+
+  cancelProxy: (jobId: string): Promise<boolean> => ipcRenderer.invoke('playback:cancelProxy', jobId),
+
+  onProxyEvent: (listener: (event: ProxyPlaybackEvent) => void): (() => void) => {
+    const wrapped = (_event: unknown, payload: ProxyPlaybackEvent) => listener(payload);
+    ipcRenderer.on('playback:event', wrapped);
+    return () => ipcRenderer.removeListener('playback:event', wrapped);
+  },
 
   /** Returns the current app version string. */
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),

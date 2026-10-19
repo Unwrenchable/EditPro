@@ -272,7 +272,7 @@ export function buildContentSecurityPolicy(
     `style-src ${styleSrc}`,
     "style-src-attr 'unsafe-inline'",
     "img-src 'self' data: blob:",
-    "media-src 'self' data: blob:",
+    "media-src 'self' data: blob: media:",
     "font-src 'self' data:",
     `connect-src ${connectSrc}`,
     "object-src 'none'",
