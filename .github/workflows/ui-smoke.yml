@@ -1,0 +1,89 @@
+name: UI smoke and benchmarks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    name: Launch, edit, and benchmark
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install desktop libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            libnss3 \
+            libatk1.0-0 \
+            libatk-bridge2.0-0 \
+            libcups2 \
+            libdrm2 \
+            libxkbcommon0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxrandr2 \
+            libgbm1 \
+            libpango-1.0-0 \
+            libcairo2 \
+            libgtk-3-0 \
+            libxshmfence1
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
+
+      - name: Build the desktop app
+        run: npm run build:electron
+
+      - name: UI smoke and performance benchmarks
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24" npm run test:e2e
+
+      - name: Package an unpacked Linux build
+        run: npx electron-builder --linux dir --publish never
+
+      - name: Packaged build launches
+        run: |
+          set -euo pipefail
+          if [ -x release/linux-unpacked/editpro ]; then
+            bin="$PWD/release/linux-unpacked/editpro"
+          elif [ -x release/linux-unpacked/EditPro ]; then
+            bin="$PWD/release/linux-unpacked/EditPro"
+          else
+            echo "Packaged EditPro binary was not produced" >&2
+            ls -la release/linux-unpacked >&2 || true
+            exit 1
+          fi
+          xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24" \
+            "$bin" --no-sandbox --disable-dev-shm-usage \
+            --user-data-dir="${RUNNER_TEMP:-/tmp}/editpro-packaged-launch" \
+            > /tmp/editpro-packaged.log 2>&1 &
+          pid=$!
+          sleep 5
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "Packaged EditPro exited during launch" >&2
+            cat /tmp/editpro-packaged.log >&2 || true
+            exit 1
+          fi
+          kill "$pid" || true
+          wait "$pid" || true
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editpro-benchmarks
+          path: e2e/results/
+          if-no-files-found: ignore

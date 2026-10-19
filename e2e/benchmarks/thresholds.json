@@ -1,0 +1,5 @@
+{
+  "frameTimeP95Ms": 400,
+  "exportThroughputFps": 6,
+  "minFrameSamples": 8
+}

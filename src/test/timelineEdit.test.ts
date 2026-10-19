@@ -15,7 +15,9 @@ import {
   slideTo,
   slipTo,
   snapTime,
+  insertProgramClip,
   splitClip,
+  trackEnd,
   trimEdgeTo,
   unlinkClip,
 } from '../utils/video/timelineEdit';
@@ -177,5 +179,42 @@ describe('multi-track timeline edits', () => {
     expect(bare.clips[0]).not.toHaveProperty('keyframes');
     expect(bare.clips[0]).not.toHaveProperty('linkId');
     expect(bare.snapping).toBe(true);
+  });
+
+  it('inserts a linked picture and sound clip after the last video edit', () => {
+    let seq = 0;
+    const existing = clip({ id: 'v-old', trackId: 'v1', endTime: 3, outPoint: 3 });
+    const placed = insertProgramClip({
+      clips: [existing],
+      tracks,
+      src: '/media/open.mp4',
+      inPoint: 1,
+      outPoint: 3,
+      createId: (prefix) => `${prefix}-${++seq}`,
+    });
+    expect(trackEnd([existing], 'v1')).toBe(3);
+    expect(placed).toHaveLength(3);
+    expect(placed?.[1]).toMatchObject({ trackId: 'v1', startTime: 3, endTime: 5, inPoint: 1, outPoint: 3, src: '/media/open.mp4' });
+    expect(placed?.[2]).toMatchObject({ trackId: 'a1', startTime: 3, endTime: 5 });
+    expect(placed?.[1]?.linkId).toBe(placed?.[2]?.linkId);
+
+    expect(insertProgramClip({
+      clips: [],
+      tracks,
+      src: '/media/open.mp4',
+      inPoint: 0,
+      outPoint: 0.01,
+      createId: (prefix) => prefix,
+    })).toBeNull();
+
+    const locked = tracks.map((track) => (track.id === 'v1' ? { ...track, locked: true } : track));
+    expect(insertProgramClip({
+      clips: [],
+      tracks: locked,
+      src: '/media/open.mp4',
+      inPoint: 0,
+      outPoint: 2,
+      createId: (prefix) => prefix,
+    })).toBeNull();
   });
 });

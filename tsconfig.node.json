@@ -22,5 +22,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["vite.config.ts", "electron/security.ts"]
+  "include": ["vite.config.ts", "electron/security.ts", "scripts/benchmarkThresholds.test.ts"]
 }
