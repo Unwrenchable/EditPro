@@ -293,6 +293,13 @@ describe('delivery presets and encoders', () => {
     })).toMatchObject({ codec: 'libx264', hardware: false });
     expect(selectVideoEncoder({
       choice: 'auto',
+      available: null,
+      format: 'mp4',
+      codec: 'h264',
+      platform: 'win32',
+    })).toMatchObject({ codec: 'libx264', hardware: false });
+    expect(selectVideoEncoder({
+      choice: 'auto',
       available: ['h264_nvenc', 'libx264'],
       format: 'mp4',
       codec: 'h264',

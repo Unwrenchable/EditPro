@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { chromium, expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { preview, type PreviewServer } from 'vite';
-import { projectRoot, writeMediaFixture } from './launch';
+import { launchEditPro, projectRoot, writeMediaFixture } from './launch';
 
 const root = projectRoot();
 const shotDir = path.join(root, 'e2e', 'results', 'layout');
@@ -35,6 +35,9 @@ interface LayoutSnapshot {
   scopes: Box | null;
   motion: Box | null;
   dock: Box | null;
+  tracks: Box | null;
+  graph: Box | null;
+  splitter: Box | null;
 }
 
 function overlapArea(a: Box | null, b: Box | null): number {
@@ -73,6 +76,9 @@ async function readLayout(page: Page): Promise<LayoutSnapshot> {
       scopes: box('.video-scopes-panel'),
       motion: box('.motion-panel'),
       dock: box('.editor-dock'),
+      tracks: box('.pro-tl-scroll'),
+      graph: box('.tl-graph'),
+      splitter: box('.timeline-splitter'),
     };
   });
 }
@@ -95,6 +101,8 @@ function installPreferences(kind: 'electron' | 'web') {
       if (prop === 'getDecodeInfo') {
         return () => Promise.resolve({ videoDecode: 'software', hardware: false, label: 'Software', platform: 'win32' });
       }
+      if (prop === 'listVideoEncoders') return () => Promise.resolve([]);
+      if (prop === 'getPlatform') return () => Promise.resolve('win32');
       if (String(prop).startsWith('on')) return () => () => {};
       if (prop === 'getPathForFile') return () => '';
       return () => Promise.resolve(null);
@@ -180,9 +188,10 @@ async function contextFor(options: {
 }
 
 const desktopSizes = [
+  { width: 1024, height: 576 },
   { width: 1280, height: 720 },
-  { width: 1366, height: 768 },
-  { width: 1536, height: 864 },
+  { width: 1440, height: 900 },
+  { width: 1920, height: 1080 },
 ];
 
 for (const size of desktopSizes) {
@@ -200,30 +209,35 @@ for (const size of desktopSizes) {
 
       await page.locator('input[aria-label="Open video file"]').first().setInputFiles(mediaFile);
       await page.locator('.editor-dock').waitFor();
-      await expect(page.getByRole('tab', { name: 'Multicam' })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('tab', { name: 'Multicam' })).toHaveAttribute('aria-selected', 'false');
       const loaded = await readLayout(page);
       assertSideBySide(loaded);
       expect(loaded.video).not.toBeNull();
-      expect(loaded.video!.h).toBeGreaterThanOrEqual(80);
-      expect(loaded.dock).not.toBeNull();
-      expect(loaded.multicam).not.toBeNull();
-      expect(loaded.scopes).toBeNull();
-      expect(loaded.motion).toBeNull();
-      expect(overlapArea(loaded.timeline, loaded.dock)).toBe(0);
+      expect(loaded.timeline).not.toBeNull();
+      expect(loaded.tracks).not.toBeNull();
+      expect(loaded.splitter).not.toBeNull();
+      expect(loaded.video!.h).toBeGreaterThan(loaded.timeline!.h);
+      expect(loaded.tracks!.h).toBeGreaterThanOrEqual(72);
+      expect(loaded.graph).toBeNull();
+      expect(loaded.multicam).toBeNull();
       expect(overlapArea(loaded.timeline, loaded.video)).toBe(0);
-      expect(overlapArea(loaded.video, loaded.dock)).toBe(0);
-      expect(loaded.dock!.y).toBeGreaterThanOrEqual(loaded.video!.y + loaded.video!.h - 1);
+      expect(overlapArea(loaded.timeline, loaded.dock)).toBe(0);
       expect(loaded.timeline!.y).toBeGreaterThanOrEqual(loaded.dock!.y + loaded.dock!.h - 1);
+      await saveShot(page, `after-fit-${size.width}x${size.height}.png`);
 
-      await page.getByRole('tab', { name: 'Scopes' }).click();
-      await expect(page.getByRole('tab', { name: 'Scopes' })).toHaveAttribute('aria-selected', 'true');
-      const scopes = await readLayout(page);
-      expect(scopes.multicam).toBeNull();
-      expect(scopes.scopes).not.toBeNull();
-      expect(scopes.video!.h).toBeGreaterThanOrEqual(80);
-      expect(overlapArea(scopes.timeline, scopes.dock)).toBe(0);
-      expect(overlapArea(scopes.timeline, scopes.video)).toBe(0);
-      await saveShot(page, `after-electron-coarse-${size.width}x${size.height}.png`);
+      await page.getByRole('tab', { name: 'Multicam' }).click();
+      await expect(page.getByRole('tab', { name: 'Multicam' })).toHaveAttribute('aria-selected', 'true');
+      const docked = await readLayout(page);
+      expect(docked.multicam).not.toBeNull();
+      expect(docked.video!.h).toBeGreaterThanOrEqual(120);
+      expect(docked.tracks!.h).toBeGreaterThanOrEqual(72);
+      expect(overlapArea(docked.timeline, docked.dock)).toBe(0);
+
+      await page.getByRole('button', { name: 'Keyframes' }).click();
+      await expect(page.getByLabel('Graph editor')).toBeVisible();
+      const keyed = await readLayout(page);
+      expect(keyed.graph).not.toBeNull();
+      expect(keyed.tracks!.h).toBeGreaterThanOrEqual(64);
     } finally {
       await context.close();
     }
@@ -258,6 +272,84 @@ test('a coarse pointer on a wide browser window does not select the phone layout
     await saveShot(page, 'after-web-coarse-1280x720.png');
   } finally {
     await context.close();
+  }
+});
+
+test('the export dialog fits inside a 1024x576 window', async () => {
+  const { context, page } = await contextFor({ width: 1024, height: 576, kind: 'electron', hasTouch: false });
+  try {
+    await openEditor(page);
+    await page.locator('input[aria-label="Open video file"]').first().setInputFiles(mediaFile);
+    await page.locator('.pro-tl-scroll').waitFor();
+    await page.getByRole('button', { name: 'Export file' }).click();
+    await expect(page.getByRole('dialog', { name: 'Video export' })).toBeVisible();
+    const modal = await page.locator('.export-modal').boundingBox();
+    expect(modal).not.toBeNull();
+    expect(modal!.y).toBeGreaterThanOrEqual(0);
+    expect(modal!.y + modal!.height).toBeLessThanOrEqual(576 + 1);
+    const actions = await page.locator('.export-modal .modal-actions').boundingBox();
+    expect(actions).not.toBeNull();
+    expect(actions!.y + actions!.height).toBeLessThanOrEqual(modal!.y + modal!.height + 1);
+    const overflow = await page.locator('.export-modal .modal-body').evaluate((el) => getComputedStyle(el).overflowY);
+    expect(overflow).toBe('auto');
+    await saveShot(page, 'after-export-1024x576.png');
+  } finally {
+    await context.close();
+  }
+});
+
+test('dragging the timeline splitter gives the tracks more height', async () => {
+  const { context, page } = await contextFor({ width: 1280, height: 720, kind: 'electron', hasTouch: false });
+  try {
+    await openEditor(page);
+    await page.locator('input[aria-label="Open video file"]').first().setInputFiles(mediaFile);
+    await page.locator('.pro-tl-scroll').waitFor();
+    const before = await readLayout(page);
+    const splitter = page.getByRole('separator', { name: 'Resize timeline' });
+    const box = await splitter.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + 24, box!.y + 4);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + 24, box!.y - 48, { steps: 6 });
+    await page.mouse.up();
+    const after = await readLayout(page);
+    expect(after.timeline!.h).toBeGreaterThan(before.timeline!.h + 20);
+    expect(after.tracks!.h).toBeGreaterThanOrEqual(72);
+    expect(after.video!.h).toBeGreaterThan(100);
+  } finally {
+    await context.close();
+  }
+});
+
+test('the Electron window keeps a visible timeline at the default size and at 1024x576', async () => {
+  const mainJs = path.join(root, 'dist-electron', 'main.js');
+  test.skip(!fs.existsSync(mainJs), 'Compile Electron with npm run compile:electron');
+  const launched = await launchEditPro(['--force-device-scale-factor=1.25']);
+  const { app, page } = launched;
+  try {
+    await page.getByRole('button', { name: 'Get started' }).click();
+    await page.getByRole('button', { name: /Video/ }).click();
+    await page.locator('input[aria-label="Open video file"]').first().setInputFiles(mediaFile);
+    await page.locator('.pro-tl-scroll').waitFor();
+    for (const size of [
+      { width: 1440, height: 900 },
+      { width: 1024, height: 576 },
+      { width: 1280, height: 720 },
+      { width: 1920, height: 1080 },
+    ]) {
+      await app.evaluate(({ BrowserWindow }, next) => {
+        BrowserWindow.getAllWindows()[0]?.setContentSize(next.width, next.height);
+      }, size);
+      await expect.poll(async () => (await readLayout(page)).tracks?.h ?? 0).toBeGreaterThanOrEqual(72);
+      const layout = await readLayout(page);
+      expect(layout.touchTimeline).toBe(false);
+      expect(layout.proTimeline).toBe(true);
+      expect(layout.video!.h).toBeGreaterThan(layout.timeline!.h);
+      expect(layout.graph).toBeNull();
+      await saveShot(page, `after-electron-window-${size.width}x${size.height}.png`);
+    }
+  } finally {
+    await app.close();
   }
 });
 

@@ -34,7 +34,7 @@ export interface LaunchedApp {
  * EDITPRO_EXECUTABLE points at an electron-builder binary (app.isPackaged).
  * Without it, the repo's Electron binary loads dist/ via EDITPRO_LOAD_DIST.
  */
-export async function launchEditPro(): Promise<LaunchedApp> {
+export async function launchEditPro(extraSwitches: string[] = []): Promise<LaunchedApp> {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'editpro-e2e-'));
   fs.writeFileSync(
     path.join(userData, 'preferences.json'),
@@ -46,7 +46,7 @@ export async function launchEditPro(): Promise<LaunchedApp> {
       onboardingComplete: false,
     }),
   );
-  const switches = ['--no-sandbox', '--disable-dev-shm-usage', `--user-data-dir=${userData}`];
+  const switches = ['--no-sandbox', '--disable-dev-shm-usage', `--user-data-dir=${userData}`, ...extraSwitches];
   const packaged = process.env.EDITPRO_EXECUTABLE;
   const executablePath = packaged && packaged.length > 0 ? packaged : (require('electron') as string);
   const args = packaged

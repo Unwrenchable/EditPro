@@ -1381,11 +1381,12 @@ export function softwareCodecName(format: 'mp4' | 'webm' | 'mov', codec: Deliver
 
 export function selectVideoEncoder(input: {
   choice: EncoderChoice;
-  available: readonly string[];
+  available: readonly string[] | null | undefined;
   format: 'mp4' | 'webm' | 'mov';
   codec: DeliveryCodec;
   platform: string;
 }): { codec: string; hardware: boolean; fallback: string } {
+  const available = input.available ?? [];
   const fallback = softwareCodecName(input.format, input.codec);
   if (input.format === 'webm' || input.format === 'mov' || input.codec === 'vp9' || input.codec === 'prores') {
     return { codec: fallback, hardware: false, fallback };
@@ -1393,7 +1394,7 @@ export function selectVideoEncoder(input: {
   if (input.choice === 'software') return { codec: fallback, hardware: false, fallback };
   if (input.choice !== 'auto') {
     const matchesFamily = input.codec === 'hevc' ? input.choice.startsWith('hevc_') : input.choice.startsWith('h264_');
-    if (matchesFamily && input.available.includes(input.choice)) {
+    if (matchesFamily && available.includes(input.choice)) {
       return { codec: input.choice, hardware: true, fallback };
     }
     return { codec: fallback, hardware: false, fallback };
@@ -1404,7 +1405,7 @@ export function selectVideoEncoder(input: {
   const prefix = input.codec === 'hevc' ? 'hevc_' : 'h264_';
   for (const vendor of order) {
     const name = `${prefix}${vendor}`;
-    if (input.available.includes(name)) return { codec: name, hardware: true, fallback };
+    if (available.includes(name)) return { codec: name, hardware: true, fallback };
   }
   return { codec: fallback, hardware: false, fallback };
 }

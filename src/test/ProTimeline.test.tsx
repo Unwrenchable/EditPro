@@ -58,7 +58,10 @@ describe('ProTimeline', () => {
 
     const names = screen.getAllByLabelText(/Track /).map((element) => element.getAttribute('aria-label'));
     expect(names).toEqual(['Track V2', 'Track V1', 'Track A1']);
+    expect(screen.queryByLabelText('Keyframe inspector')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Keyframes' }));
     expect(screen.getByLabelText('Keyframe inspector')).toBeInTheDocument();
+    expect(screen.getByLabelText('Graph editor')).toBeInTheDocument();
     expect(screen.getByText(/▶ 2×/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Toggle snapping' }));
