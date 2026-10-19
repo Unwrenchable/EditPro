@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getPlatform } from '../platform';
 import type { PlaybackScale, ProxyPlaybackEvent } from '../types/electron';
 
 export type ProxyStatus = 'idle' | 'unavailable' | 'running' | 'ready' | 'error' | 'cancelled';
@@ -64,8 +65,7 @@ export function useProxyMedia(sourcePath: string | null): ProxyMediaState {
   }
 
   useEffect(() => {
-    const bridge = window.editpro;
-    if (!bridge?.getDecodeInfo) return;
+    const bridge = getPlatform();
     let cancelled = false;
     void bridge.getDecodeInfo().then((info) => {
       if (!cancelled) setDecodeLabel(info.label);
@@ -77,8 +77,8 @@ export function useProxyMedia(sourcePath: string | null): ProxyMediaState {
     };
   }, []);
 
-  const bridge = typeof window === 'undefined' ? undefined : window.editpro;
-  const canStart = Boolean(sourcePath && useProxy && bridge?.startProxy && bridge?.onProxyEvent);
+  const nativeProxy = getPlatform().capabilities.nativeProxy;
+  const canStart = Boolean(sourcePath && useProxy && nativeProxy);
   const requestKey = canStart && sourcePath ? `${sourcePath}|${resolution}` : '';
   const [trackedKey, setTrackedKey] = useState<string | null>(null);
   if (trackedKey !== requestKey) {
@@ -98,7 +98,8 @@ export function useProxyMedia(sourcePath: string | null): ProxyMediaState {
   }
 
   useEffect(() => {
-    if (!canStart || !sourcePath || !bridge?.startProxy || !bridge.onProxyEvent) return;
+    if (!canStart || !sourcePath) return;
+    const bridge = getPlatform();
 
     let disposed = false;
     let activeJobId: string | null = null;
@@ -182,13 +183,14 @@ export function useProxyMedia(sourcePath: string | null): ProxyMediaState {
       unsubscribe();
       if (activeJobId?.startsWith('proxy-')) void bridge.cancelProxy(activeJobId);
     };
-  }, [canStart, sourcePath, resolution, bridge]);
+  }, [canStart, sourcePath, resolution]);
 
   useEffect(() => {
     userScale.current = false;
-    if (!sourcePath || !bridge?.classifyProxy) return;
+    const host = getPlatform();
+    if (!sourcePath || !host.capabilities.nativeProxy) return;
     let cancelled = false;
-    void bridge.classifyProxy(sourcePath).then((decision) => {
+    void host.classifyProxy(sourcePath).then((decision) => {
       if (cancelled) return;
       setAdvice(decision.reason);
       if (decision.required && !userScale.current) setResolutionState(decision.scale);
@@ -198,7 +200,7 @@ export function useProxyMedia(sourcePath: string | null): ProxyMediaState {
     return () => {
       cancelled = true;
     };
-  }, [sourcePath, bridge]);
+  }, [sourcePath]);
 
   const toggleProxy = useCallback(() => {
     setUseProxy((value) => !value);
@@ -217,7 +219,7 @@ export function useProxyMedia(sourcePath: string | null): ProxyMediaState {
   let status = job.status;
   if (!useProxy) status = proxyUrl ? 'ready' : 'idle';
   else if (!sourcePath) status = 'idle';
-  else if (!bridge?.startProxy) status = 'unavailable';
+  else if (!nativeProxy) status = 'unavailable';
 
   return {
     useProxy,

@@ -4,6 +4,7 @@ import { UPDATE_CHECK_INTERVAL_MS } from '../../../electron/updates/policy';
 interface WelcomeScreenProps {
   version: string | null;
   onStart: (crashLogging: boolean) => void;
+  runtimeNote?: string | null;
 }
 
 const HOURS = Math.max(1, Math.round(UPDATE_CHECK_INTERVAL_MS / 3_600_000));
@@ -23,7 +24,7 @@ const cards = [
   },
 ];
 
-export default function WelcomeScreen({ version, onStart }: WelcomeScreenProps) {
+export default function WelcomeScreen({ version, onStart, runtimeNote = null }: WelcomeScreenProps) {
   const [crashLogging, setCrashLogging] = useState(false);
   return (
     <div className="modal-overlay welcome-overlay" role="presentation">
@@ -52,6 +53,7 @@ export default function WelcomeScreen({ version, onStart }: WelcomeScreenProps) 
           EditPro looks for updates when it opens, and every {HOURS} hours after that. You can turn automatic checks
           off in Settings.
         </p>
+        {runtimeNote && <p className="modal-copy welcome-note">{runtimeNote}</p>}
         <label className="setting-row welcome-log">
           <span>
             <span className="setting-title">Save a local crash log</span>

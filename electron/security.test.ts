@@ -4,6 +4,7 @@ import {
   APP_ORIGIN,
   FileAccessGrants,
   buildContentSecurityPolicy,
+  buildWebContentSecurityPolicy,
   canonicalizePath,
   contentTypeForPath,
   decodeImageDataUrl,
@@ -243,6 +244,21 @@ describe('content security policy', () => {
     expect(development).toContain('ws://localhost:5173');
     expect(development).not.toContain('unsafe-eval');
     expect(development).toContain("script-src-attr 'none'");
+  });
+
+  it('keeps the desktop policy strict and opens a separate web policy for wasm workers', () => {
+    const desktop = buildContentSecurityPolicy(prod);
+    const web = buildWebContentSecurityPolicy();
+    expect(desktop).toContain("worker-src 'none'");
+    expect(desktop).not.toContain('wasm-unsafe-eval');
+    expect(desktop).toContain('connect-src blob: media:');
+    expect(desktop).not.toContain('https://huggingface.co');
+    expect(web).toContain("worker-src 'self' blob:");
+    expect(web).toContain('wasm-unsafe-eval');
+    expect(web).toContain('https://huggingface.co');
+    expect(web).toContain('https://cdn.jsdelivr.net');
+    expect(web).not.toContain('frame-ancestors');
+    expect(web).not.toContain("script-src 'self' 'unsafe-inline'");
   });
 });
 

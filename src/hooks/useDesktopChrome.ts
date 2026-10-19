@@ -7,6 +7,7 @@ import {
   type PreferencePatch,
   type UpdateDialogState,
 } from '../../electron/updates/policy';
+import { getPlatform } from '../platform';
 import { loadBrowserPreferences, saveBrowserPreferences } from '../utils/preferences';
 
 const WEBSITE = 'https://github.com/Unwrenchable/EditPro';
@@ -14,7 +15,7 @@ const WEBSITE = 'https://github.com/Unwrenchable/EditPro';
 export function useDesktopChrome() {
   const [prefs, setPrefs] = useState<AppPreferences | null>(() => {
     if (typeof window === 'undefined') return null;
-    if (window.editpro?.getPreferences) return null;
+    if (getPlatform().kind === 'electron') return null;
     return loadBrowserPreferences(window.localStorage);
   });
   const [version, setVersion] = useState<string | null>(null);
@@ -28,11 +29,9 @@ export function useDesktopChrome() {
 
   useEffect(() => {
     let cancelled = false;
-    const bridge = window.editpro;
-    const loadPrefs = bridge?.getPreferences
-      ? bridge.getPreferences()
-      : Promise.resolve(loadBrowserPreferences(window.localStorage));
-    const loadVersion = bridge?.getVersion ? bridge.getVersion() : Promise.resolve(null);
+    const bridge = getPlatform();
+    const loadPrefs = bridge.getPreferences();
+    const loadVersion = bridge.getVersion();
     void loadPrefs
       .then((next) => {
         if (!cancelled) setPrefs(next);
@@ -51,8 +50,7 @@ export function useDesktopChrome() {
   }, []);
 
   useEffect(() => {
-    const bridge = window.editpro;
-    if (!bridge?.onUpdateState) return;
+    const bridge = getPlatform();
     let sawEvent = false;
     const unsubscribe = bridge.onUpdateState((payload) => {
       if (!isUpdateDialogState(payload)) return;
@@ -67,8 +65,8 @@ export function useDesktopChrome() {
   }, [acceptDialog]);
 
   useEffect(() => {
-    const bridge = window.editpro;
-    if (!bridge?.onMenu) return;
+    const bridge = getPlatform();
+    if (bridge.kind !== 'electron') return;
     const offSettings = bridge.onMenu('menu:settings', () => setSettingsOpen(true));
     const offAbout = bridge.onMenu('menu:about', () => setAboutOpen(true));
     return () => {
@@ -78,10 +76,11 @@ export function useDesktopChrome() {
   }, []);
 
   useEffect(() => {
-    const bridge = window.editpro;
-    if (!bridge?.recordClientError) return;
+    const platform = getPlatform();
+    if (platform.kind === 'electron' && !window.editpro?.recordClientError) return;
+    if (platform.kind !== 'electron' && !prefs?.crashLogging) return;
     const onError = (event: ErrorEvent) => {
-      void bridge.recordClientError({
+      void platform.recordClientError({
         message: event.message,
         stack: event.error instanceof Error ? event.error.stack : undefined,
         source: event.filename,
@@ -90,7 +89,7 @@ export function useDesktopChrome() {
     const onRejection = (event: PromiseRejectionEvent) => {
       const reason = event.reason;
       const message = reason instanceof Error ? reason.message : 'Unhandled promise rejection';
-      void bridge.recordClientError({
+      void platform.recordClientError({
         message,
         stack: reason instanceof Error ? reason.stack : undefined,
       });
@@ -101,28 +100,29 @@ export function useDesktopChrome() {
       window.removeEventListener('error', onError);
       window.removeEventListener('unhandledrejection', onRejection);
     };
-  }, []);
+  }, [prefs?.crashLogging]);
 
-    const updatePreferences = useCallback(async (patch: PreferencePatch) => {
-      try {
-        const bridge = window.editpro;
-        if (bridge?.setPreferences) {
-          const next = await bridge.setPreferences(patch);
-          setPrefs(next);
-          return next;
-        }
-        const next = applyPreferencePatch(prefs ?? DEFAULT_PREFERENCES, patch);
-        saveBrowserPreferences(window.localStorage, next);
+  const updatePreferences = useCallback(async (patch: PreferencePatch) => {
+    const current = prefs ?? loadBrowserPreferences(window.localStorage);
+    try {
+      const platform = getPlatform();
+      if (platform.kind === 'electron' && window.editpro?.setPreferences) {
+        const next = await platform.setPreferences(patch);
         setPrefs(next);
         return next;
-      } catch {
-        return prefs ?? DEFAULT_PREFERENCES;
       }
-    }, [prefs]);
+      const next = applyPreferencePatch(current, patch);
+      saveBrowserPreferences(window.localStorage, next);
+      setPrefs(next);
+      return next;
+    } catch {
+      return current;
+    }
+  }, [prefs]);
 
   const checkForUpdates = useCallback(() => {
     setSettingsOpen(false);
-    void window.editpro?.checkForUpdates?.().catch(() => undefined);
+    void getPlatform().checkForUpdates().catch(() => undefined);
   }, []);
 
   const visibleDialog: UpdateDialogState =
@@ -144,27 +144,27 @@ export function useDesktopChrome() {
     setCrashLogging: (crashLogging: boolean) => updatePreferences({ crashLogging }),
     checkForUpdates,
     downloadUpdate: () => {
-      void window.editpro?.downloadUpdate?.().catch(() => undefined);
+      void getPlatform().downloadUpdate().catch(() => undefined);
     },
     installUpdate: () => {
-      void window.editpro?.installUpdate?.().catch(() => undefined);
+      void getPlatform().installUpdate().catch(() => undefined);
     },
     skipUpdate: () => {
       if (dialog.type !== 'available') return;
-      void window.editpro?.skipUpdate?.(dialog.update.version).catch(() => undefined);
+      void getPlatform().skipUpdate(dialog.update.version).catch(() => undefined);
     },
     remindLater: () => {
-      void window.editpro?.remindUpdateLater?.().catch(() => undefined);
+      void getPlatform().remindUpdateLater().catch(() => undefined);
     },
     dismissUpdate: () => {
-      void window.editpro?.dismissUpdate?.().catch(() => undefined);
+      void getPlatform().dismissUpdate().catch(() => undefined);
     },
     openRelease: () => {
       if (dialog.type !== 'available') return;
-      void window.editpro?.openExternal?.(dialog.update.releaseUrl).catch(() => undefined);
+      void getPlatform().openExternal(dialog.update.releaseUrl).catch(() => undefined);
     },
     openWebsite: () => {
-      void window.editpro?.openExternal?.(WEBSITE).catch(() => undefined);
+      void getPlatform().openExternal(WEBSITE).catch(() => undefined);
     },
   };
 }

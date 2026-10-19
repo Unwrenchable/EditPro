@@ -7,6 +7,7 @@ import type {
 } from '../../types';
 import type { CreativeState } from '../../utils/video/creative';
 import CreativePanels from './CreativePanels';
+import SpeechTranscription from './SpeechTranscription';
 import AudioMixer from './AudioMixer';
 import { PLATFORM_PRESETS, TRANSITION_OPTIONS } from '../../utils/video/exportPlan';
 import OfflineAiPanel from './ai/OfflineAiPanel';
@@ -34,6 +35,7 @@ interface VideoAdjustmentPanelProps {
   audio: AudioTrackSettings;
   autoReframe: AutoReframeAspect;
   videoUrl: string | null;
+  mediaFile?: File | null;
   onLumetriBasicChange: (key: keyof Omit<LumetriColor, 'curves' | 'wheels'>, value: number) => void;
   onCurvesChange: (key: keyof LumetriCurves, value: number) => void;
   onColorWheelChange: (wheel: 'shadows' | 'midtones' | 'highlights', axis: 'x' | 'y' | 'luminance', value: number) => void;
@@ -59,7 +61,7 @@ interface VideoAdjustmentPanelProps {
 }
 
 const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
-  lumetri, audio, autoReframe, videoUrl,
+  lumetri, audio, autoReframe, videoUrl, mediaFile = null,
   onLumetriBasicChange, onCurvesChange, onColorWheelChange, onAudioChange,
   onSetAutoReframe, onResetLumetri, onOpenVideo, onExport,
   transition, onTransitionChange,
@@ -220,9 +222,7 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
           <OfflineAiPanel />
 
           <p className="section-subtitle" style={{ marginTop: 14 }}>Enhance Speech</p>
-          <div className="info-box">
-            <p>AI-powered noise removal — makes dialogue sound professionally recorded. Configure in the <strong>Sound</strong> panel → Dialogue → Clarity.</p>
-          </div>
+          <SpeechTranscription file={mediaFile} disabled={disabled} />
         </div>
       )}
 

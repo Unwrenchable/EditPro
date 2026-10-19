@@ -21,6 +21,12 @@
     "compile:electron": "tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json",
     "dev:electron": "npm run compile:electron && concurrently -k \"cross-env NODE_ENV=development vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron dist-electron/main.js\"",
     "build": "tsc -b && vite build",
+    "build:web": "cross-env EDITPRO_TARGET=web npm run build",
+    "build:mobile": "npm run build:web && cap sync",
+    "cap:sync": "cap sync",
+    "cap:android": "cap open android",
+    "cap:ios": "cap open ios",
+    "fetch:ffmpeg": "node scripts/fetch-ffmpeg-core.mjs",
     "build:electron": "npm run build && npm run compile:electron",
     "dist": "npm run build:electron && electron-builder --publish never",
     "dist:mac": "npm run build:electron && electron-builder --mac --publish never",
@@ -160,13 +166,24 @@
     }
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/ios": "^8.5.3",
+    "@capacitor/share": "^8.0.3",
+    "@capawesome/capacitor-file-picker": "^8.1.1",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "@huggingface/transformers": "^3.7.6",
     "electron-updater": "^6.8.10",
     "ffmpeg-static": "^5.3.0",
     "onnxruntime-web": "^1.22.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "webm-muxer": "^5.1.4"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.64.1",
     "@resvg/resvg-js": "^2.6.2",

@@ -7,6 +7,7 @@ import PhotoDropZone from './components/photo/PhotoDropZone';
 import PhotoAdjustmentPanel from './components/photo/PhotoAdjustmentPanel';
 import { EditorSessionProvider } from './session/EditorSession';
 import { useEditorSession } from './session/editorSessionContext';
+import { getPlatform } from './platform';
 import { formatFileSize } from './utils/imageFilters';
 import type { EditorMode, ExportOptions, MagicMoviePlan } from './types';
 import './App.css';
@@ -154,8 +155,8 @@ const AppFrame: React.FC<{
 }> = ({ mode, onModeChange, showExport, onExport, onExportClose, magicResult, onMagicApply, videoKey, videoExportRequest }) => {
   const session = useEditorSession();
   useEffect(() => {
-    const bridge = window.editpro;
-    if (!bridge?.onMenu) return;
+    const bridge = getPlatform();
+    if (bridge.kind !== 'electron') return;
     return bridge.onMenu('menu:export', onExport);
   }, [onExport]);
   return (

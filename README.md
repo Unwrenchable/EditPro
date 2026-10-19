@@ -96,12 +96,81 @@ npm run dist:linux       # Package for Linux (.AppImage + .deb)
 npm run generate:icons   # Rebuild app icons from build-resources/icon.svg
 npm test                 # Run Vitest test suite
 npm run lint             # ESLint
+npm run build:web        # Browser bundle (WebCodecs, ffmpeg.wasm, transformers.js)
+npm run build:mobile     # Web bundle copied into the Android and iOS projects
+npm run fetch:ffmpeg     # Optional: download ffmpeg.wasm core into public/ffmpeg
 ```
+
+### Browser, phone, and desktop
+
+The React UI talks to a platform bridge (`src/platform`). In Electron that bridge is the existing preload IPC. In a browser tab and in the Capacitor shell it is an in-process implementation. On Android and iOS the system file picker and share sheet replace the browser input.
+
+| Need | Desktop | Browser |
+|------|---------|---------|
+| Export | Bundled ffmpeg | ffmpeg.wasm when `/ffmpeg` or jsDelivr can load the core, then WebCodecs, then MediaRecorder. The dialog says which engine ran. |
+| Proxies and GPU decode | Desktop ffmpeg | The original file plays. The playback bar says proxies are a desktop feature. |
+| Speech transcription | No Whisper binary in this build | transformers.js (Whisper-tiny) on the device, after the weights download once. Audio is not uploaded. |
+| Updates | electron-updater on signed installs | Refresh the page, or download a desktop installer. |
+
+`npm run dev` is the browser session. `npm run dev:electron` is the desktop app. `npm run build` stays the desktop renderer (wasm engines are stubbed so the packaged app does not carry them). `npm run build:web` is the static bundle those engines are allowed to load in.
+
+`/download.html` is the install landing page. It reads the latest GitHub release, highlights the matching desktop installer, offers the Android APK when a release includes one, and asks Chrome or Edge to show the PWA install prompt. iPhone and iPad get Add to Home Screen steps, because those browsers do not fire an install prompt.
+
+That web bundle is an installable PWA. `public/manifest.webmanifest`, `public/sw.js`, and `public/icons/` are the install metadata and offline shell. The service worker registers only in a production web or Capacitor build, so the desktop app keeps `worker-src 'none'`. Phones, tablets, and windows narrower than 800px get a stacked layout and a simplified timeline (scrub, pinch zoom, trim, split, delete). A mouse or trackpad keeps the multitrack timeline. `vercel.json` builds with `npm run build:web` and publishes `dist` as a static site.
+
+### Android and iOS
+
+`android/` and `ios/` are Capacitor 8 projects around the web build. `npm run build:mobile` runs `build:web` and `cap sync`. Open them with `npm run cap:android` (Android Studio) or `npm run cap:ios` (Xcode, macOS). Export, proxies, and transcription behave like the browser: native ffmpeg and Whisper are desktop features, and the UI says so.
+
+GitHub Actions workflow `Mobile` builds an unsigned debug APK on Ubuntu and an unsigned iOS Simulator app on macOS. Neither artifact is a store build.
+
+#### Play Store
+
+1. Create the app in Play Console with package name `com.editpro.app`.
+2. Create an upload key and keep the keystore out of git:
+
+   ```bash
+   keytool -genkeypair -v -keystore editpro-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+   ```
+
+3. Create `android/keystore.properties` (gitignored; do not commit the `.jks` either). Paths are relative to the `android/` directory:
+
+   ```
+   storeFile=../editpro-upload.jks
+   storePassword=***
+   keyAlias=upload
+   keyPassword=***
+   ```
+
+   `android/app/build.gradle` reads that file when it exists and signs `bundleRelease`. Without it, `assembleDebug` stays unsigned.
+4. `cd android && ./gradlew bundleRelease` produces `android/app/build/outputs/bundle/release/app-release.aab`.
+5. Enroll in Play App Signing, upload the AAB to an internal testing track, then promote to production. Play re-signs the download with the app signing key.
+
+#### App Store and TestFlight
+
+1. Enroll in the Apple Developer Program and register the App ID `com.editpro.app`.
+2. Create an Apple Distribution certificate and an App Store provisioning profile for that App ID.
+3. In Xcode, open `ios/App/App.xcodeproj`, set the team under Signing & Capabilities, and leave the bundle id as `com.editpro.app`.
+4. Product → Archive. In the Organizer, Distribute App → App Store Connect → Upload. The same archive is the TestFlight build.
+5. In App Store Connect, wait for processing, add the build to TestFlight, then submit the version for review when the store listing is ready.
+
+A command-line upload uses an archive with signing enabled (the CI job turns signing off):
+
+```bash
+xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath build/EditPro.xcarchive archive
+xcodebuild -exportArchive -archivePath build/EditPro.xcarchive \
+  -exportPath build/export -exportOptionsPlist ios/ExportOptions.plist
+```
+
+`ios/ExportOptions.plist` in this repo uses `method` `app-store-connect` and `signingStyle` `automatic`. Fill in your team id before exporting. TestFlight receives the uploaded IPA; internal testers can install after processing, and external testers need a short Beta App Review.
 
 ### Project structure
 
 ```
 EditPro/
+├── android/               Capacitor Android project
+├── ios/                   Capacitor iOS project
 ├── electron/              Electron main process + preload
 │   ├── main.ts            BrowserWindow, IPC handlers, app menu
 │   ├── preload.ts         Secure contextBridge IPC bridge
@@ -115,7 +184,9 @@ EditPro/
 │   ├── hooks/
 │   │   ├── usePhotoEditor.ts
 │   │   ├── useVideoEditor.ts
-│   │   └── useNativeFiles.ts   Electron/browser file I/O bridge
+│   │   └── useNativeFiles.ts   Platform file open/save
+│   ├── platform/               Desktop IPC and browser/mobile host
+│   ├── pwa/                    Install metadata, service worker, touch layout
 │   ├── types/
 │   │   ├── index.ts            PhotoAdjustments, VideoEditorState, etc.
 │   │   └── electron.d.ts       window.editpro IPC bridge types

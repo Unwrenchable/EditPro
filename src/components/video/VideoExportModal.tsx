@@ -28,6 +28,7 @@ import {
 } from '../../utils/video/creative';
 import { isTrackMuted, timelineClipsForExport } from '../../utils/video/exportClips';
 import { resolveSourcePath } from '../../utils/video/sourcePath';
+import { getPlatform } from '../../platform';
 import type { MotionDocument } from '../../utils/video/motionGraphics';
 
 interface VideoExportModalProps {
@@ -122,13 +123,13 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
   };
 
   useEffect(() => {
-    const bridge = window.editpro;
-    if (!bridge?.listVideoEncoders) return;
+    const bridge = getPlatform();
+    if (!bridge.listVideoEncoders) return;
     let cancelled = false;
     void bridge.listVideoEncoders().then((names) => {
       if (!cancelled) setAvailableEncoders(names);
     }).catch(() => undefined);
-    void bridge.getPlatform?.().then((name) => {
+    void bridge.getPlatform().then((name) => {
       if (!cancelled && name) setHostPlatform(name);
     }).catch(() => undefined);
     return () => {
@@ -137,8 +138,8 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
   }, []);
 
   useEffect(() => {
-    const bridge = window.editpro;
-    if (!bridge?.onExportEvent) return;
+    const bridge = getPlatform();
+    if (!bridge.onExportEvent) return;
     return bridge.onExportEvent((event) => {
       if (event.jobId !== jobIdRef.current) return;
       if (event.type === 'progress' && typeof event.percent === 'number') {
@@ -152,7 +153,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
     return () => {
       const id = jobIdRef.current;
       if (phaseRef.current === 'rendering' && id) {
-        void window.editpro?.cancelVideoExport(id);
+        void getPlatform().cancelVideoExport(id);
       }
     };
   }, []);
@@ -225,10 +226,10 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
       setError(preview.error ?? 'These export settings cannot be encoded.');
       return;
     }
-    const bridge = window.editpro;
-    if (!bridge?.startVideoExport || !bridge.saveVideo) {
+    const bridge = getPlatform();
+    if (bridge.exportEngine() === 'none' || !bridge.startVideoExport || !bridge.saveVideo) {
       setPhaseTracked('error');
-      setError('Video export runs in the EditPro desktop app, which bundles ffmpeg. Browser preview cannot write a video file. Start it with npm run dev:electron.');
+      setError(bridge.featureStatus('ffmpeg-export').detail);
       return;
     }
     const defaultName = suggestExportFilename(file?.name ?? 'editpro.mp4', { resolution, frameRate, format });
@@ -318,10 +319,10 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
 
   const renderQueued = async () => {
     if (!creative || creative.renderQueue.length === 0) return;
-    const bridge = window.editpro;
-    if (!bridge?.startVideoExport || !bridge.saveVideo) {
+    const bridge = getPlatform();
+    if (bridge.exportEngine() === 'none' || !bridge.startVideoExport || !bridge.saveVideo) {
       setPhaseTracked('error');
-      setError('Video export runs in the EditPro desktop app, which bundles ffmpeg. Browser preview cannot write a video file. Start it with npm run dev:electron.');
+      setError(bridge.featureStatus('ffmpeg-export').detail);
       return;
     }
     if (!sourcePath) {
@@ -406,7 +407,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
 
   const handleCancel = () => {
     if (phase === 'rendering' && jobIdRef.current) {
-      void window.editpro?.cancelVideoExport(jobIdRef.current);
+      void getPlatform().cancelVideoExport(jobIdRef.current);
       return;
     }
     onClose();
@@ -445,8 +446,11 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
         <h2 className="modal-title">Export Video</h2>
         <div className="modal-body">
           <p className="export-lead">
-            Encodes the timeline with the bundled ffmpeg binary: trim, playback speed, Lumetri color, Essential Sound, auto reframe, and the selected transition.
+            {getPlatform().featureStatus('ffmpeg-export').summary}
           </p>
+          {getPlatform().kind !== 'electron' && (
+            <p className="panel-hint export-runtime-note">{getPlatform().featureStatus('ffmpeg-export').detail}</p>
+          )}
 
           <div className="form-row">
             <label className="form-label" htmlFor="export-platform">Preset</label>
@@ -641,9 +645,9 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
             <button
               className="btn-secondary"
               type="button"
-              onClick={() => { void window.editpro?.showItemInFolder(outputPath); }}
+              onClick={() => { void getPlatform().showItemInFolder(outputPath); }}
             >
-              Show in folder
+              {getPlatform().capabilities.fileSystemPaths ? 'Show in folder' : 'Download again'}
             </button>
           )}
           {creative && onCreativeChange && phase !== 'done' && (

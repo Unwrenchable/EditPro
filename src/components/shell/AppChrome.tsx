@@ -4,6 +4,7 @@ import UpdateNotification from './UpdateNotification';
 import WelcomeScreen from './WelcomeScreen';
 import { useEditorSession } from '../../session/editorSessionContext';
 import { useDesktopChrome } from '../../hooks/useDesktopChrome';
+import { getPlatform } from '../../platform';
 
 function RecoveryDialog() {
   const { recovery, restoreRecovery, discardRecovery } = useEditorSession();
@@ -35,10 +36,15 @@ function RecoveryDialog() {
 /** First-run welcome, settings, about, update prompts, and crash recovery. */
 export default function AppChrome() {
   const chrome = useDesktopChrome();
+  const runtimeNote = getPlatform().kind === 'electron' ? null : getPlatform().featureStatus('ffmpeg-export').summary;
   return (
     <>
       {chrome.showWelcome && (
-        <WelcomeScreen version={chrome.version} onStart={(crashLogging) => void chrome.completeOnboarding(crashLogging)} />
+        <WelcomeScreen
+          version={chrome.version}
+          runtimeNote={runtimeNote}
+          onStart={(crashLogging) => void chrome.completeOnboarding(crashLogging)}
+        />
       )}
       {chrome.prefs?.onboardingComplete && <RecoveryDialog />}
       {chrome.settingsOpen && chrome.prefs && (
@@ -49,6 +55,7 @@ export default function AppChrome() {
           onCrashLogging={(enabled) => void chrome.setCrashLogging(enabled)}
           onCheck={chrome.checkForUpdates}
           onClose={() => chrome.setSettingsOpen(false)}
+          runtimeNote={runtimeNote}
         />
       )}
       {chrome.aboutOpen && (

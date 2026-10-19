@@ -3,6 +3,7 @@ import type { EditorMode } from '../types';
 import type { PhotoEditorApi } from './usePhotoEditor';
 import type { VideoEditorApi } from './useVideoEditor';
 import { createProjectIO, type ProjectIO } from '../services/projectIO';
+import { getPlatform } from '../platform';
 import type { MediaBinding } from '../utils/editSnapshots';
 import { isTextEditingTarget, matchEditorShortcut } from '../utils/editorShortcuts';
 import { fileFromDataUrl, fileMediaPath } from '../utils/mediaFiles';
@@ -354,8 +355,8 @@ export function useProjectSession({ mode, onModeChange, photo, video }: UseProje
   }, [flushAutosave, io]);
 
   useEffect(() => {
-    const bridge = window.editpro;
-    if (bridge?.onMenu) {
+    const bridge = getPlatform();
+    if (bridge.kind === 'electron') {
       const undoFromMenu = () => {
         if (isTextEditingTarget(document.activeElement)) {
           document.execCommand('undo');

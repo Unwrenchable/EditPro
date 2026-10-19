@@ -7,6 +7,7 @@ interface SettingsDialogProps {
   onCrashLogging: (enabled: boolean) => void;
   onCheck: () => void;
   onClose: () => void;
+  runtimeNote?: string | null;
 }
 
 const HOURS = Math.max(1, Math.round(UPDATE_CHECK_INTERVAL_MS / 3_600_000));
@@ -18,6 +19,7 @@ export default function SettingsDialog({
   onCrashLogging,
   onCheck,
   onClose,
+  runtimeNote = null,
 }: SettingsDialogProps) {
   return (
     <div className="modal-overlay shell-overlay" role="presentation">
@@ -53,6 +55,7 @@ export default function SettingsDialog({
             aria-label="Save crash logs on this computer"
           />
         </label>
+        {runtimeNote && <p className="setting-help">{runtimeNote}</p>}
         <div className="modal-actions">
           <button type="button" className="btn-secondary" onClick={onCheck}>
             Check for updates now

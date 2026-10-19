@@ -2,6 +2,7 @@ import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { useEditorSession } from '../../session/editorSessionContext';
 import VideoDropZone from './VideoDropZone';
 import ProTimeline from './ProTimeline';
+import TouchTimeline from './TouchTimeline';
 import VideoControls from './VideoControls';
 import VideoAdjustmentPanel from './VideoAdjustmentPanel';
 import VideoScopesPanel from './VideoScopesPanel';
@@ -11,6 +12,7 @@ import { placeTransition } from '../../utils/video/creative';
 import ProgramOverlay from './ProgramOverlay';
 import { useWaveformPeaks } from '../../hooks/useWaveformPeaks';
 import { formatFileSize } from '../../utils/imageFilters';
+import { getPlatform } from '../../platform';
 import { resolveSourcePath } from '../../utils/video/sourcePath';
 import { keyframedCss, sampleEffect, sampleTransform } from '../../utils/video/keyframes';
 import { clipAtPlayhead, editPoints, neighborEdit } from '../../utils/video/timelineEdit';
@@ -22,6 +24,7 @@ import { liftGammaGainIsNeutral } from '../../utils/video/creative';
 import { usePreviewSrc } from '../../playback/usePreviewSrc';
 import { useProxyMedia } from '../../playback/useProxyMedia';
 import PlaybackSettings from './PlaybackSettings';
+import { useCoarseLayout } from '../../pwa/useCoarseLayout';
 import MotionStage from './MotionStage';
 import MotionGraphicsPanel from './MotionGraphicsPanel';
 import MulticamPanel from './MulticamPanel';
@@ -83,6 +86,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   exportRequestId = 0,
 }) => {
   const { video: editor, videoRef, relinkVideo } = useEditorSession();
+  const coarse = useCoarseLayout();
   const { state } = editor;
   const { loadVideo, applyMagicPlan } = editor;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -99,7 +103,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   // lifetime of this component instance (key-based remount in App).
   useEffect(() => {
     if (initialFile) {
-      loadVideo(initialFile, resolveSourcePath(initialFile, window.editpro));
+      loadVideo(initialFile, resolveSourcePath(initialFile, getPlatform()));
     }
   }, [initialFile, loadVideo]);
 
@@ -135,7 +139,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   usePreviewSrc(videoRef, playbackUrl, state.mediaPath);
   const showingProxy = Boolean(proxy.useProxy && proxy.proxyUrl && playbackUrl === proxy.proxyUrl);
   const stageScale = monitorScale({ showingProxy, resolution: proxy.resolution });
-  const proxyAvailable = Boolean(state.mediaPath && window.editpro?.startProxy);
+  const proxyAvailable = Boolean(state.mediaPath && getPlatform().capabilities.nativeProxy);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -147,7 +151,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   const handleOpenVideo = useCallback(() => fileInputRef.current?.click(), []);
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) editor.loadVideo(file, resolveSourcePath(file, window.editpro));
+    if (file) editor.loadVideo(file, resolveSourcePath(file, getPlatform()));
   };
 
   // ── Stable transport callbacks (created in component, not hook) ────────────
@@ -237,7 +241,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   }, [editor, state]);
 
   return (
-    <div className="editor-layout">
+    <div className={coarse ? 'editor-layout editor-layout-touch' : 'editor-layout'}>
       <div className="editor-main">
         {state.mediaMissing && (
           <div className="info-box media-missing-banner">
@@ -249,7 +253,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
         )}
         {!state.videoUrl ? (
           <VideoDropZone
-            onFileSelected={(file) => editor.loadVideo(file, resolveSourcePath(file, window.editpro))}
+            onFileSelected={(file) => editor.loadVideo(file, resolveSourcePath(file, getPlatform()))}
             videoUrl={state.videoUrl}
           />
         ) : (
@@ -393,59 +397,75 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           onReplace={editor.replaceTimeline}
         />
 
-        {/* ── Pro Timeline ── */}
-        <ProTimeline
-          duration={state.duration}
-          currentTime={state.currentTime}
-          trimStart={state.trimStart}
-          trimEnd={state.trimEnd}
-          markers={state.markers}
-          tracks={state.tracks}
-          clips={state.clips}
-          zoom={state.timelineZoom}
-          snapping={state.snapping}
-          shuttleRate={state.shuttleRate}
-          programKeyframes={state.programKeyframes}
-          hasVideo={!!state.videoUrl}
-          onSeek={handleSeek}
-          onTrimStartChange={handleTrimStart}
-          onTrimEndChange={handleTrimEnd}
-          onZoomChange={handleZoom}
-          onToggleSnapping={() => editor.setSnapping(!state.snapping)}
-          onAddMarker={handleAddMarker}
-          onRemoveMarker={handleRemoveMarker}
-          onAddTrack={handleAddTrack}
-          onSetTrackMuted={handleSetTrackMuted}
-          onSetTrackLocked={handleSetTrackLocked}
-          onRemoveTrack={handleRemoveTrack}
-          onDeleteClip={handleDeleteClip}
-          onRippleDelete={(id) => editor.rippleDeleteClip(id)}
-          onSplitClip={handleSplitClip}
-          onRazorAt={(time) => editor.razorAt(time)}
-          onMoveClip={(id, trackId, start, key) => editor.moveClip(id, trackId, start, key)}
-          onTrimClip={(id, edge, time, key) => editor.trimClip(id, edge, time, key)}
-          onRippleTrim={(id, edge, value, key) => editor.rippleTrimClip(id, edge, value, key)}
-          onRollClip={(id, edge, time, key) => editor.rollClip(id, edge, time, key)}
-          onSlipClip={(id, inPoint, key) => editor.slipClip(id, inPoint, key)}
-          onSlideClip={(id, start, key) => editor.slideClip(id, start, key)}
-          onToggleLink={(id) => editor.toggleClipLink(id, state.currentTime)}
-          onAddKeyframe={(clipId, keyframe) => {
-            if (clipId) editor.addClipKeyframe(clipId, keyframe);
-            else editor.addProgramKeyframe(keyframe);
-          }}
-          onUpdateKeyframe={(clipId, keyframeId, patch, key) => {
-            if (clipId) editor.updateClipKeyframe(clipId, keyframeId, patch, key);
-            else editor.updateProgramKeyframe(keyframeId, patch, key);
-          }}
-          onRemoveKeyframe={(clipId, keyframeId) => {
-            if (clipId) editor.removeClipKeyframe(clipId, keyframeId);
-            else editor.removeProgramKeyframe(keyframeId);
-          }}
-          peaks={waveform.peaks}
-          mediaDuration={waveform.duration || state.duration}
-          onDropTransition={handleDropTransition}
-          onInsertClip={handleInsertClip}
-        />
+        {coarse ? (
+          <TouchTimeline
+            duration={state.duration}
+            currentTime={state.currentTime}
+            trimStart={state.trimStart}
+            trimEnd={state.trimEnd}
+            zoom={state.timelineZoom}
+            clips={state.clips}
+            onSeek={handleSeek}
+            onTrimStartChange={handleTrimStart}
+            onTrimEndChange={handleTrimEnd}
+            onZoomChange={handleZoom}
+            onRazorAt={(time) => editor.razorAt(time)}
+            onDeleteClip={handleDeleteClip}
+          />
+        ) : (
+          <ProTimeline
+            duration={state.duration}
+            currentTime={state.currentTime}
+            trimStart={state.trimStart}
+            trimEnd={state.trimEnd}
+            markers={state.markers}
+            tracks={state.tracks}
+            clips={state.clips}
+            zoom={state.timelineZoom}
+            snapping={state.snapping}
+            shuttleRate={state.shuttleRate}
+            programKeyframes={state.programKeyframes}
+            hasVideo={!!state.videoUrl}
+            onSeek={handleSeek}
+            onTrimStartChange={handleTrimStart}
+            onTrimEndChange={handleTrimEnd}
+            onZoomChange={handleZoom}
+            onToggleSnapping={() => editor.setSnapping(!state.snapping)}
+            onAddMarker={handleAddMarker}
+            onRemoveMarker={handleRemoveMarker}
+            onAddTrack={handleAddTrack}
+            onSetTrackMuted={handleSetTrackMuted}
+            onSetTrackLocked={handleSetTrackLocked}
+            onRemoveTrack={handleRemoveTrack}
+            onDeleteClip={handleDeleteClip}
+            onRippleDelete={(id) => editor.rippleDeleteClip(id)}
+            onSplitClip={handleSplitClip}
+            onRazorAt={(time) => editor.razorAt(time)}
+            onMoveClip={(id, trackId, start, key) => editor.moveClip(id, trackId, start, key)}
+            onTrimClip={(id, edge, time, key) => editor.trimClip(id, edge, time, key)}
+            onRippleTrim={(id, edge, value, key) => editor.rippleTrimClip(id, edge, value, key)}
+            onRollClip={(id, edge, time, key) => editor.rollClip(id, edge, time, key)}
+            onSlipClip={(id, inPoint, key) => editor.slipClip(id, inPoint, key)}
+            onSlideClip={(id, start, key) => editor.slideClip(id, start, key)}
+            onToggleLink={(id) => editor.toggleClipLink(id, state.currentTime)}
+            onAddKeyframe={(clipId, keyframe) => {
+              if (clipId) editor.addClipKeyframe(clipId, keyframe);
+              else editor.addProgramKeyframe(keyframe);
+            }}
+            onUpdateKeyframe={(clipId, keyframeId, patch, key) => {
+              if (clipId) editor.updateClipKeyframe(clipId, keyframeId, patch, key);
+              else editor.updateProgramKeyframe(keyframeId, patch, key);
+            }}
+            onRemoveKeyframe={(clipId, keyframeId) => {
+              if (clipId) editor.removeClipKeyframe(clipId, keyframeId);
+              else editor.removeProgramKeyframe(keyframeId);
+            }}
+            peaks={waveform.peaks}
+            mediaDuration={waveform.duration || state.duration}
+            onDropTransition={handleDropTransition}
+            onInsertClip={handleInsertClip}
+          />
+        )}
 
         {state.file && (
           <div className="file-info-bar">
@@ -473,6 +493,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
         audio={state.audio}
         autoReframe={state.autoReframe}
         videoUrl={state.videoUrl}
+        mediaFile={state.file}
         onLumetriBasicChange={editor.updateLumetriBasic}
         onCurvesChange={editor.updateLumetriCurves}
         onColorWheelChange={editor.updateColorWheel}
