@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getPlatform } from '../platform';
 import type { PlaybackScale, ProxyPlaybackEvent } from '../types/electron';
 
@@ -15,6 +15,8 @@ export interface ProxyMediaState {
   width: number;
   height: number;
   decodeLabel: string;
+  /** Why auto proxy chose this resolution, when the desktop app classified the file. */
+  advice: string | null;
   toggleProxy: () => void;
   setResolution: (scale: PlaybackScale) => void;
   cancel: () => void;
@@ -54,6 +56,13 @@ export function useProxyMedia(sourcePath: string | null): ProxyMediaState {
   const [resolution, setResolutionState] = useState<PlaybackScale>('full');
   const [job, setJob] = useState<ProxyJob>(EMPTY);
   const [decodeLabel, setDecodeLabel] = useState('Hardware decode unavailable');
+  const [advice, setAdvice] = useState<string | null>(null);
+  const [adviceFor, setAdviceFor] = useState<string | null>(null);
+  const userScale = useRef(false);
+  if (adviceFor !== sourcePath) {
+    setAdviceFor(sourcePath);
+    setAdvice(null);
+  }
 
   useEffect(() => {
     const bridge = getPlatform();
@@ -176,11 +185,29 @@ export function useProxyMedia(sourcePath: string | null): ProxyMediaState {
     };
   }, [canStart, sourcePath, resolution]);
 
+  useEffect(() => {
+    userScale.current = false;
+    const host = getPlatform();
+    if (!sourcePath || !host.capabilities.nativeProxy) return;
+    let cancelled = false;
+    void host.classifyProxy(sourcePath).then((decision) => {
+      if (cancelled) return;
+      setAdvice(decision.reason);
+      if (decision.required && !userScale.current) setResolutionState(decision.scale);
+    }).catch(() => {
+      if (!cancelled) setAdvice(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sourcePath]);
+
   const toggleProxy = useCallback(() => {
     setUseProxy((value) => !value);
   }, []);
 
   const setResolution = useCallback((scale: PlaybackScale) => {
+    userScale.current = true;
     setResolutionState(scale);
   }, []);
 
@@ -205,6 +232,7 @@ export function useProxyMedia(sourcePath: string | null): ProxyMediaState {
     width: job.width,
     height: job.height,
     decodeLabel,
+    advice,
     toggleProxy,
     setResolution,
     cancel,

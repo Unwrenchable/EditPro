@@ -5,6 +5,7 @@ import {
   mediaTicketUrl,
   parseByteRange,
   planMediaResponse,
+  resolveMediaAllowOrigin,
   trustedMediaOrigin,
 } from './mediaAccess.js';
 
@@ -32,6 +33,12 @@ describe('media tickets', () => {
     expect(trustedMediaOrigin('app://bundle', prod)).toBe('app://bundle');
     expect(trustedMediaOrigin('http://localhost:5173', prod)).toBeNull();
     expect(trustedMediaOrigin(null, prod)).toBeNull();
+    expect(resolveMediaAllowOrigin(null, prod)).toBe('*');
+    expect(resolveMediaAllowOrigin('', prod)).toBe('*');
+    expect(resolveMediaAllowOrigin('null', prod)).toBe('*');
+    expect(resolveMediaAllowOrigin('app://bundle', prod)).toBe('app://bundle');
+    expect(resolveMediaAllowOrigin('https://evil.example', prod)).toBeNull();
+    expect(resolveMediaAllowOrigin('http://localhost:5173', dev)).toBe('http://localhost:5173');
   });
 });
 

@@ -181,6 +181,17 @@ contextBridge.exposeInMainWorld('editpro', {
     return () => ipcRenderer.removeListener('playback:event', wrapped);
   },
 
+  classifyProxy: (sourcePath: string) => ipcRenderer.invoke('playback:classifyProxy', sourcePath),
+
+  getProxyCache: () => ipcRenderer.invoke('playback:cacheStatus'),
+
+  setProxyCachePolicy: (patch: { maxBytes?: number; auto?: boolean }) =>
+    ipcRenderer.invoke('playback:setCachePolicy', patch),
+
+  cleanupProxyCache: () => ipcRenderer.invoke('playback:cleanupCache'),
+
+  relinkProxyCache: (paths: string[]) => ipcRenderer.invoke('playback:relinkCache', paths),
+
   /** Returns the current app version string. */
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
 
@@ -216,6 +227,51 @@ contextBridge.exposeInMainWorld('editpro', {
   dismissUpdate: () => ipcRenderer.invoke('updates:dismiss'),
 
   recordClientError: (report: unknown) => ipcRenderer.invoke('logs:record', report),
+
+  aiStatus: () => ipcRenderer.invoke('ai:status'),
+
+  aiDownload: (request: { kind: 'model' | 'cli' | 'matte'; modelId?: string }) =>
+    ipcRenderer.invoke('ai:download', request),
+
+  aiCancel: (jobId: string) => ipcRenderer.invoke('ai:cancel', jobId),
+
+  aiDetectSilence: (request: { sourcePath: string; noiseDb: number; minDuration: number; padding: number }) =>
+    ipcRenderer.invoke('ai:detectSilence', request),
+
+  aiDetectScenes: (request: { sourcePath: string; threshold: number }) =>
+    ipcRenderer.invoke('ai:detectScenes', request),
+
+  aiTranscribe: (request: { sourcePath: string; modelId: string; language?: string }) =>
+    ipcRenderer.invoke('ai:transcribe', request),
+
+  aiSaveCaptions: (request: { cues: unknown; format: 'srt' | 'vtt' }) =>
+    ipcRenderer.invoke('ai:saveCaptions', request),
+
+  aiBurnCaptions: (request: { sourcePath: string; cues: unknown }) =>
+    ipcRenderer.invoke('ai:burnCaptions', request),
+
+  aiRenderCut: (request: { sourcePath: string; ranges: { start: number; end: number }[] }) =>
+    ipcRenderer.invoke('ai:renderCut', request),
+
+  aiRemoveBackground: (request: { sourcePath: string; mode: 'transparent' | 'color'; color: string }) =>
+    ipcRenderer.invoke('ai:removeBackground', request),
+
+  onAiEvent: (listener: (event: {
+    jobId: string;
+    type: 'progress' | 'done' | 'cancelled' | 'error';
+    percent?: number;
+    message?: string;
+  }) => void) => {
+    if (typeof listener !== 'function') throw new Error('Invalid AI subscription');
+    const wrapped = (_event: unknown, payload: {
+      jobId: string;
+      type: 'progress' | 'done' | 'cancelled' | 'error';
+      percent?: number;
+      message?: string;
+    }) => listener(payload);
+    ipcRenderer.on('ai:event', wrapped);
+    return () => ipcRenderer.removeListener('ai:event', wrapped);
+  },
 
   /**
    * Listen for menu events sent from the main process.

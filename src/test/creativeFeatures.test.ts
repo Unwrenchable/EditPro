@@ -10,6 +10,7 @@ import {
   createDefaultLiftGammaGain,
   createTitleFromPreset,
   edgePresentation,
+  encoderStatusLabel,
   envelopeGain,
   formatCube,
   liftGammaGainFilter,
@@ -127,7 +128,7 @@ describe('audio envelope, mixer, and loudness', () => {
     expect(expression).toContain('min(1\\,t/1.000)');
   });
 
-  it('solos one track and applies normalize makeup in the monitor and the plan', () => {
+  it('solos one track, previews measured makeup, and exports loudnorm', () => {
     const creative = createDefaultCreativeState();
     creative.trackMix = [{ trackId: 'a2', volume: 1, solo: true }];
     creative.loudness = { targetLufs: -14, normalizeOnExport: true, measuredLufs: -20 };
@@ -160,7 +161,9 @@ describe('audio envelope, mixer, and loudness', () => {
     const plan = buildExportPlan(job({ creative, volume: 1 }));
     const graph = plan.args[plan.args.indexOf('-filter_complex') + 1];
     expect(monitor).toBeCloseTo(0.5 * 10 ** (6 / 20));
-    expect(graph).toContain(`volume=${monitor.toFixed(3)}`);
+    expect(graph).toContain('volume=0.500');
+    expect(graph).toContain('loudnorm=I=-14.0');
+    expect(graph.match(/loudnorm=/g)).toHaveLength(1);
   });
 
   it('measures a louder tone as louder than a quiet one', () => {
@@ -303,6 +306,62 @@ describe('delivery presets and encoders', () => {
       platform: 'darwin',
     })).toMatchObject({ codec: 'libx264', hardware: false });
     expect(parseEncoderList(' V....D h264_nvenc           NVIDIA\n A....D aac')).toContain('h264_nvenc');
+    expect(parseEncoderList([
+      ' V....D h264_qsv             Intel Quick Sync',
+      ' V....D h264_amf             AMD AMF',
+      ' V....D hevc_nvenc           NVIDIA HEVC',
+    ].join('\n'))).toEqual(expect.arrayContaining(['h264_qsv', 'h264_amf', 'hevc_nvenc']));
+  });
+
+  it('names the probed hardware encoder and the software fallback', () => {
+    const nvenc = selectVideoEncoder({
+      choice: 'auto',
+      available: ['h264_qsv', 'h264_nvenc', 'libx264', 'libx265'],
+      format: 'mp4',
+      codec: 'h264',
+      platform: 'linux',
+    });
+    expect(nvenc).toMatchObject({ codec: 'h264_nvenc', hardware: true, fallback: 'libx264' });
+    expect(encoderStatusLabel('auto', nvenc)).toContain('h264_nvenc');
+    expect(encoderStatusLabel('auto', nvenc)).toContain('libx264');
+
+    const quickSync = selectVideoEncoder({
+      choice: 'auto',
+      available: ['h264_qsv', 'libx264'],
+      format: 'mp4',
+      codec: 'h264',
+      platform: 'linux',
+    });
+    expect(quickSync.codec).toBe('h264_qsv');
+
+    const amf = selectVideoEncoder({
+      choice: 'h264_amf',
+      available: ['h264_amf', 'libx264'],
+      format: 'mp4',
+      codec: 'h264',
+      platform: 'win32',
+    });
+    expect(amf).toMatchObject({ codec: 'h264_amf', hardware: true });
+
+    const hevc = selectVideoEncoder({
+      choice: 'auto',
+      available: ['hevc_nvenc', 'libx265'],
+      format: 'mp4',
+      codec: 'hevc',
+      platform: 'linux',
+    });
+    expect(hevc).toMatchObject({ codec: 'hevc_nvenc', fallback: 'libx265' });
+
+    const software = selectVideoEncoder({
+      choice: 'auto',
+      available: ['libx264'],
+      format: 'mp4',
+      codec: 'h264',
+      platform: 'linux',
+    });
+    expect(encoderStatusLabel('auto', software)).toContain('NVENC');
+    expect(encoderStatusLabel('h264_amf', { codec: 'libx264', hardware: false, fallback: 'libx264' })).toContain('not available');
+    expect(encoderStatusLabel('software', software)).toBe('Software libx264');
   });
 
   it('encodes YouTube 4K, H.265, and NVENC without changing a plain H.264 plan', () => {

@@ -8,7 +8,9 @@ import type {
 import type { CreativeState } from '../../utils/video/creative';
 import CreativePanels from './CreativePanels';
 import SpeechTranscription from './SpeechTranscription';
+import AudioMixer from './AudioMixer';
 import { PLATFORM_PRESETS, TRANSITION_OPTIONS } from '../../utils/video/exportPlan';
+import OfflineAiPanel from './ai/OfflineAiPanel';
 
 type MainPanel = 'lumetri' | 'sound' | 'effects' | 'ai' | 'export';
 
@@ -42,7 +44,6 @@ interface VideoAdjustmentPanelProps {
   onResetLumetri: () => void;
   onOpenVideo: () => void;
   onExport: (prefs: { platform: VideoExportOptions['platform']; quality: number }) => void;
-  onDetectScenes: () => void;
   transition: VideoTransition;
   onTransitionChange: (transition: VideoTransition) => void;
   creative: CreativeState;
@@ -52,14 +53,20 @@ interface VideoAdjustmentPanelProps {
   duration: number;
   onCreativeChange: (creative: CreativeState, coalesceKey?: string) => void;
   onSetTrackMuted: (trackId: string, muted: boolean) => void;
+  peaks?: readonly number[];
+  mediaDuration?: number;
+  trimStart?: number;
+  playbackRate?: number;
+  videoRef?: React.RefObject<HTMLVideoElement | null>;
 }
 
 const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
   lumetri, audio, autoReframe, videoUrl, mediaFile = null,
   onLumetriBasicChange, onCurvesChange, onColorWheelChange, onAudioChange,
-  onSetAutoReframe, onResetLumetri, onOpenVideo, onExport, onDetectScenes,
+  onSetAutoReframe, onResetLumetri, onOpenVideo, onExport,
   transition, onTransitionChange,
   creative, tracks, clips, currentTime, duration, onCreativeChange, onSetTrackMuted,
+  peaks = [], mediaDuration = 0, trimStart = 0, playbackRate = 1, videoRef,
 }) => {
   const disabled = !videoUrl;
   const [activePanel, setActivePanel] = useState<MainPanel>('lumetri');
@@ -115,6 +122,19 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
       {/* ── Essential Sound ── */}
       {activePanel === 'sound' && (
         <>
+        <AudioMixer
+          creative={creative}
+          tracks={tracks}
+          currentTime={currentTime}
+          trimStart={trimStart}
+          playbackRate={playbackRate}
+          peaks={peaks}
+          mediaDuration={mediaDuration || duration}
+          disabled={disabled}
+          videoRef={videoRef}
+          onCreativeChange={onCreativeChange}
+          onSetTrackMuted={onSetTrackMuted}
+        />
         <EssentialSoundPanel
           audio={audio}
           disabled={disabled}
@@ -199,13 +219,7 @@ const VideoAdjustmentPanel: React.FC<VideoAdjustmentPanelProps> = ({
             ))}
           </div>
 
-          <p className="section-subtitle" style={{ marginTop: 14 }}>Scene Edit Detection</p>
-          <div className="info-box" style={{ marginBottom: 10 }}>
-            <p>Automatically detect cuts in pre-edited footage and split into individual clips on the timeline.</p>
-          </div>
-          <button className="reset-btn" onClick={onDetectScenes} disabled={disabled}>
-            🔍 Detect Scenes
-          </button>
+          <OfflineAiPanel />
 
           <p className="section-subtitle" style={{ marginTop: 14 }}>Enhance Speech</p>
           <SpeechTranscription file={mediaFile} disabled={disabled} />

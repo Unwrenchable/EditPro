@@ -10,11 +10,17 @@ import {
   type UpdateDialogState,
 } from '../../electron/updates/policy';
 import type {
+  AiCaptionCue,
+  AiEvent,
+  AiStatus,
+  AiTimeRange,
   ClientErrorReport,
   DecodeInfo,
   EditProBridge,
   EditProMenuChannel,
   PlaybackScale,
+  ProxyCacheStatus,
+  ProxyClassification,
   ProxyPlaybackEvent,
   ProxyStartResult,
   VideoExportEvent,
@@ -33,6 +39,33 @@ import type {
   PlatformCapabilities,
   TranscriptionResult,
 } from './types';
+
+function emptyCache(): ProxyCacheStatus {
+  return { usedBytes: 0, maxBytes: 0, auto: false, items: 0, partials: 0, entries: [] };
+}
+
+function emptyClassification(): ProxyClassification {
+  return {
+    required: false,
+    scale: 'full',
+    reason: 'Proxy classification is unavailable.',
+    width: 0,
+    height: 0,
+    durationSec: 0,
+    videoCodec: '',
+    fileBytes: 0,
+  };
+}
+
+function emptyAi(platform: string): AiStatus {
+  return {
+    platform,
+    arch: '',
+    whisperCli: false,
+    models: [],
+    matte: { id: 'matte', label: 'Background matte', bytes: 0, ready: false },
+  };
+}
 
 function live(): EditProBridge | null {
   if (typeof window === 'undefined') return null;
@@ -140,6 +173,34 @@ export const electronPlatform: PlatformBridge = {
   cancelProxy: (jobId: string) => live()?.cancelProxy(jobId) ?? Promise.resolve(false),
   onProxyEvent(listener: (event: ProxyPlaybackEvent) => void): () => void {
     return live()?.onProxyEvent(listener) ?? (() => {});
+  },
+  classifyProxy: (sourcePath: string) => live()?.classifyProxy(sourcePath) ?? Promise.resolve(emptyClassification()),
+  getProxyCache: () => live()?.getProxyCache() ?? Promise.resolve(emptyCache()),
+  setProxyCachePolicy: (patch: { maxBytes?: number; auto?: boolean }) =>
+    live()?.setProxyCachePolicy(patch) ?? Promise.resolve(emptyCache()),
+  cleanupProxyCache: () => live()?.cleanupProxyCache() ?? Promise.resolve(emptyCache()),
+  relinkProxyCache: (paths: string[]) =>
+    live()?.relinkProxyCache(paths) ?? Promise.resolve({ moved: 0, skipped: paths.length, status: emptyCache() }),
+  aiStatus: () => live()?.aiStatus() ?? Promise.resolve(emptyAi('electron')),
+  aiDownload: (request: { kind: 'model' | 'cli' | 'matte'; modelId?: string }) =>
+    live()?.aiDownload(request) ?? Promise.resolve({ ready: false }),
+  aiCancel: (jobId: string) => live()?.aiCancel(jobId) ?? Promise.resolve(false),
+  aiDetectSilence: (request: { sourcePath: string; noiseDb: number; minDuration: number; padding: number }) =>
+    live()?.aiDetectSilence(request) ?? Promise.reject(new Error('Offline AI is unavailable in this desktop session.')),
+  aiDetectScenes: (request: { sourcePath: string; threshold: number }) =>
+    live()?.aiDetectScenes(request) ?? Promise.reject(new Error('Offline AI is unavailable in this desktop session.')),
+  aiTranscribe: (request: { sourcePath: string; modelId: string; language?: string }) =>
+    live()?.aiTranscribe(request) ?? Promise.reject(new Error('Offline AI is unavailable in this desktop session.')),
+  aiSaveCaptions: (request: { cues: AiCaptionCue[]; format: 'srt' | 'vtt' }) =>
+    live()?.aiSaveCaptions(request) ?? Promise.resolve({ outputPath: null }),
+  aiBurnCaptions: (request: { sourcePath: string; cues: AiCaptionCue[] }) =>
+    live()?.aiBurnCaptions(request) ?? Promise.resolve({ outputPath: null }),
+  aiRenderCut: (request: { sourcePath: string; ranges: AiTimeRange[] }) =>
+    live()?.aiRenderCut(request) ?? Promise.resolve({ outputPath: null }),
+  aiRemoveBackground: (request: { sourcePath: string; mode: 'transparent' | 'color'; color: string }) =>
+    live()?.aiRemoveBackground(request) ?? Promise.resolve({ outputPath: null }),
+  onAiEvent(listener: (event: AiEvent) => void): () => void {
+    return live()?.onAiEvent(listener) ?? (() => {});
   },
   getVersion: () => live()?.getVersion() ?? Promise.resolve('1.0.0'),
   getPlatform: () => live()?.getPlatform?.() ?? Promise.resolve('linux'),

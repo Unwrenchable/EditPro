@@ -19,6 +19,7 @@ import {
   type ExportJob,
 } from '../../utils/video/exportPlan';
 import {
+  encoderStatusLabel,
   selectVideoEncoder,
   siblingOutputPath,
   type CreativeState,
@@ -28,6 +29,7 @@ import {
 import { isTrackMuted, timelineClipsForExport } from '../../utils/video/exportClips';
 import { resolveSourcePath } from '../../utils/video/sourcePath';
 import { getPlatform } from '../../platform';
+import type { MotionDocument } from '../../utils/video/motionGraphics';
 
 interface VideoExportModalProps {
   file: File | null;
@@ -49,6 +51,7 @@ interface VideoExportModalProps {
   onTransitionChange: (transition: VideoTransition) => void;
   onClose: () => void;
   creative?: CreativeState;
+  graphics?: MotionDocument;
   onCreativeChange?: (creative: CreativeState, coalesceKey?: string) => void;
 }
 
@@ -91,6 +94,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
   onTransitionChange,
   onClose,
   creative,
+  graphics,
   onCreativeChange,
 }) => {
   const preset = PLATFORM_PRESETS.find((item) => item.id === initialPlatform) ?? PLATFORM_PRESETS[0];
@@ -180,6 +184,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
       ...(programKeyframes.length > 0 ? { keyframes: programKeyframes } : {}),
       options: { resolution, frameRate, format, quality, codec, encoder, availableEncoders, platform: hostPlatform },
       ...(creative ? { creative } : {}),
+      ...(graphics && (graphics.shapes.length > 0 || graphics.texts.length > 0) ? { graphics } : {}),
     };
     try {
       return { plan: buildExportPlan(job), error: null as string | null };
@@ -189,7 +194,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
   }, [
     sourcePath, trimStart, trimEnd, playbackRate, volume, muted, tracks,
     lumetri, audio, aspect, transition, clipPlan.clips, programKeyframes, resolution, frameRate, format, quality,
-    codec, encoder, availableEncoders, hostPlatform, creative,
+    codec, encoder, availableEncoders, hostPlatform, creative, graphics,
   ]);
 
   const warnings = useMemo(() => {
@@ -272,6 +277,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
       ...(programKeyframes.length > 0 ? { keyframes: programKeyframes } : {}),
       options: { resolution, frameRate, format, quality, codec, encoder, availableEncoders, platform: hostPlatform },
       ...(creative ? { creative } : {}),
+      ...(graphics && (graphics.shapes.length > 0 || graphics.texts.length > 0) ? { graphics } : {}),
     };
 
     setPhaseTracked('rendering');
@@ -561,6 +567,7 @@ const VideoExportModal: React.FC<VideoExportModalProps> = ({
                 <option key={name} value={name}>{name}</option>
               ))}
             </select>
+            <p className="export-encoder-note">{encoderStatusLabel(encoder, encoderPlan)}</p>
           </div>
 
           <div className="form-row">

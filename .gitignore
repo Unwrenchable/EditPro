@@ -46,3 +46,6 @@ ios/DerivedData/
 *.apk
 *.aab
 *.ipa
+e2e/results/
+test-results/
+playwright-report/

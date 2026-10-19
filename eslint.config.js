@@ -29,4 +29,13 @@ export default defineConfig([
       },
     },
   },
+  {
+    files: ['e2e/**/*.ts'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+  },
 ])

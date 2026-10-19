@@ -12,10 +12,16 @@ import {
   type UpdateDialogState,
 } from '../../electron/updates/policy';
 import type {
+  AiCaptionCue,
+  AiSceneHit,
+  AiStatus,
+  AiTimeRange,
   ClientErrorReport,
   DecodeInfo,
   EditProBridge,
   PlaybackScale,
+  ProxyCacheStatus,
+  ProxyClassification,
   ProxyStartResult,
   VideoExportEvent,
   VideoExportResult,
@@ -25,7 +31,7 @@ import type { RecoveryOffer } from '../utils/sessionStore';
 import type { ExportJob } from '../utils/video/exportPlan';
 import { APP_VERSION } from './version';
 import { detectBrowserEncoders, preferredExportEngine } from './engines';
-import { UPDATE_BROWSER_DETAIL, describeFeature } from './messages';
+import { PROXY_UNAVAILABLE_DETAIL, UPDATE_BROWSER_DETAIL, describeFeature } from './messages';
 import type {
   ExportEngine,
   FeatureStatus,
@@ -426,6 +432,85 @@ export class BrowserPlatform implements PlatformBridge {
     return () => {};
   }
 
+  async classifyProxy(): Promise<ProxyClassification> {
+    return {
+      required: false,
+      scale: 'full',
+      reason: PROXY_UNAVAILABLE_DETAIL,
+      width: 0,
+      height: 0,
+      durationSec: 0,
+      videoCodec: '',
+      fileBytes: 0,
+    };
+  }
+
+  async getProxyCache(): Promise<ProxyCacheStatus> {
+    return emptyProxyCache();
+  }
+
+  async setProxyCachePolicy(): Promise<ProxyCacheStatus> {
+    return emptyProxyCache();
+  }
+
+  async cleanupProxyCache(): Promise<ProxyCacheStatus> {
+    return emptyProxyCache();
+  }
+
+  async relinkProxyCache(paths: string[]): Promise<{ moved: number; skipped: number; status: ProxyCacheStatus }> {
+    return { moved: 0, skipped: paths.length, status: emptyProxyCache() };
+  }
+
+  async aiStatus(): Promise<AiStatus> {
+    return {
+      platform: this.kind,
+      arch: '',
+      whisperCli: false,
+      models: [],
+      matte: { id: 'matte', label: 'Background matte', bytes: 0, ready: false },
+    };
+  }
+
+  async aiDownload(): Promise<{ ready: boolean }> {
+    return { ready: false };
+  }
+
+  async aiCancel(): Promise<boolean> {
+    return false;
+  }
+
+  async aiDetectSilence(): Promise<{ duration: number; ranges: AiTimeRange[] }> {
+    return unavailableAi();
+  }
+
+  async aiDetectScenes(): Promise<{ hits: AiSceneHit[] }> {
+    return unavailableAi();
+  }
+
+  async aiTranscribe(): Promise<{ cues: AiCaptionCue[] }> {
+    return unavailableAi();
+  }
+
+  async aiSaveCaptions(): Promise<{ outputPath: string | null }> {
+    return { outputPath: null };
+  }
+
+  async aiBurnCaptions(): Promise<{ outputPath: string | null }> {
+    return unavailableAi();
+  }
+
+  async aiRenderCut(): Promise<{ outputPath: string | null }> {
+    return unavailableAi();
+  }
+
+  async aiRemoveBackground(): Promise<{ outputPath: string | null }> {
+    return unavailableAi();
+  }
+
+  onAiEvent(): () => void {
+    return () => {};
+  }
+
   async getVersion(): Promise<string> {
     return APP_VERSION;
   }
@@ -528,6 +613,14 @@ export class BrowserPlatform implements PlatformBridge {
     }
     return `download:${defaultName}`;
   }
+}
+
+function emptyProxyCache(): ProxyCacheStatus {
+  return { usedBytes: 0, maxBytes: 0, auto: false, items: 0, partials: 0, entries: [] };
+}
+
+function unavailableAi(): never {
+  throw new Error('Open the EditPro desktop app to use offline AI.');
 }
 
 function capacitorHost(): string {

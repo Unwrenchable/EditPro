@@ -230,7 +230,8 @@ describe('content security policy', () => {
     expect(production).toContain("style-src-attr 'unsafe-inline'");
     expect(production).toContain("object-src 'none'");
     expect(production).toContain("frame-ancestors 'none'");
-    expect(production).toContain("connect-src 'none'");
+    expect(production).toContain('connect-src blob: media:');
+    expect(production).not.toContain('https:');
     const meta = buildContentSecurityPolicy({ ...prod, delivery: 'meta' });
     expect(meta).not.toContain('frame-ancestors');
     expect(meta).toContain("script-src 'self'");
@@ -250,7 +251,8 @@ describe('content security policy', () => {
     const web = buildWebContentSecurityPolicy();
     expect(desktop).toContain("worker-src 'none'");
     expect(desktop).not.toContain('wasm-unsafe-eval');
-    expect(desktop).toContain("connect-src 'none'");
+    expect(desktop).toContain('connect-src blob: media:');
+    expect(desktop).not.toContain('https://huggingface.co');
     expect(web).toContain("worker-src 'self' blob:");
     expect(web).toContain('wasm-unsafe-eval');
     expect(web).toContain('https://huggingface.co');

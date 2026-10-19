@@ -50,6 +50,35 @@ export interface ProxyStartResult {
   message?: string;
 }
 
+export interface ProxyClassification {
+  required: boolean;
+  scale: PlaybackScale;
+  reason: string;
+  width: number;
+  height: number;
+  durationSec: number;
+  videoCodec: string;
+  fileBytes: number;
+}
+
+export interface ProxyCacheEntry {
+  id: string;
+  bytes: number;
+  lastUsedMs: number;
+  partial: boolean;
+  sourceName: string | null;
+  scale: PlaybackScale | null;
+}
+
+export interface ProxyCacheStatus {
+  usedBytes: number;
+  maxBytes: number;
+  auto: boolean;
+  items: number;
+  partials: number;
+  entries: ProxyCacheEntry[];
+}
+
 export interface DecodeInfo {
   videoDecode: string;
   hardware: boolean;
@@ -74,6 +103,53 @@ export interface ClientErrorReport {
   message: string;
   stack?: string;
   source?: string;
+}
+
+export interface AiEvent {
+  jobId: string;
+  type: 'progress' | 'done' | 'cancelled' | 'error';
+  percent?: number;
+  message?: string;
+}
+
+export interface AiTimeRange {
+  start: number;
+  end: number;
+}
+
+export interface AiTranscriptWord {
+  id: string;
+  text: string;
+  start: number;
+  end: number;
+}
+
+export interface AiCaptionCue {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  words: AiTranscriptWord[];
+}
+
+export interface AiModelStatus {
+  id: string;
+  label: string;
+  bytes: number;
+  ready: boolean;
+}
+
+export interface AiStatus {
+  platform: string;
+  arch: string;
+  whisperCli: boolean;
+  models: AiModelStatus[];
+  matte: AiModelStatus;
+}
+
+export interface AiSceneHit {
+  time: number;
+  score: number;
 }
 
 export interface EditProBridge {
@@ -106,6 +182,11 @@ export interface EditProBridge {
   startProxy(request: { sourcePath: string; scale: PlaybackScale }): Promise<ProxyStartResult>;
   cancelProxy(jobId: string): Promise<boolean>;
   onProxyEvent(listener: (event: ProxyPlaybackEvent) => void): () => void;
+  classifyProxy(sourcePath: string): Promise<ProxyClassification>;
+  getProxyCache(): Promise<ProxyCacheStatus>;
+  setProxyCachePolicy(patch: { maxBytes?: number; auto?: boolean }): Promise<ProxyCacheStatus>;
+  cleanupProxyCache(): Promise<ProxyCacheStatus>;
+  relinkProxyCache(paths: string[]): Promise<{ moved: number; skipped: number; status: ProxyCacheStatus }>;
   getVersion(): Promise<string>;
   getPlatform(): Promise<string>;
   openExternal(url: string): Promise<boolean>;
@@ -121,6 +202,26 @@ export interface EditProBridge {
   remindUpdateLater(): Promise<boolean>;
   dismissUpdate(): Promise<boolean>;
   recordClientError(report: ClientErrorReport): Promise<boolean>;
+  aiStatus(): Promise<AiStatus>;
+  aiDownload(request: { kind: 'model' | 'cli' | 'matte'; modelId?: string }): Promise<{ ready: boolean }>;
+  aiCancel(jobId: string): Promise<boolean>;
+  aiDetectSilence(request: {
+    sourcePath: string;
+    noiseDb: number;
+    minDuration: number;
+    padding: number;
+  }): Promise<{ duration: number; ranges: AiTimeRange[] }>;
+  aiDetectScenes(request: { sourcePath: string; threshold: number }): Promise<{ hits: AiSceneHit[] }>;
+  aiTranscribe(request: { sourcePath: string; modelId: string; language?: string }): Promise<{ cues: AiCaptionCue[] }>;
+  aiSaveCaptions(request: { cues: AiCaptionCue[]; format: 'srt' | 'vtt' }): Promise<{ outputPath: string | null }>;
+  aiBurnCaptions(request: { sourcePath: string; cues: AiCaptionCue[] }): Promise<{ outputPath: string | null }>;
+  aiRenderCut(request: { sourcePath: string; ranges: AiTimeRange[] }): Promise<{ outputPath: string | null }>;
+  aiRemoveBackground(request: {
+    sourcePath: string;
+    mode: 'transparent' | 'color';
+    color: string;
+  }): Promise<{ outputPath: string | null }>;
+  onAiEvent(listener: (event: AiEvent) => void): () => void;
 }
 
 declare global {

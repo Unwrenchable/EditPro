@@ -53,6 +53,7 @@ export function timelineClipsForExport(
         value: keyframe.value,
         easing: keyframe.easing,
         ...(keyframe.effectParam ? { effectParam: keyframe.effectParam } : {}),
+        ...(keyframe.bezier ? { bezier: keyframe.bezier } : {}),
       }));
     }
     exported.push(exportedClip);

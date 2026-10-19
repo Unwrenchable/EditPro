@@ -1,4 +1,9 @@
 import type { CreativeState } from '../utils/video/creative';
+import type { BezierHandles, EaseCurve } from '../../electron/export/easing';
+import type { MotionDocument } from '../utils/video/motionGraphics';
+import type { MulticamSequence } from '../utils/video/multicam';
+
+export type { BezierHandles, EaseCurve };
 
 export type EditorMode = 'photo' | 'video' | 'magic';
 
@@ -124,8 +129,6 @@ export interface TimelineTrack {
   locked: boolean;
 }
 
-export type EaseCurve = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' | 'hold';
-
 /** Transform channels, plus `effect` for a named effect parameter. */
 export type KeyframeProperty = 'positionX' | 'positionY' | 'scale' | 'rotation' | 'opacity' | 'effect';
 
@@ -133,7 +136,8 @@ export type KeyframeProperty = 'positionX' | 'positionY' | 'scale' | 'rotation' 
  * One animated value on a clip or on the program.
  * `time` is seconds from the clip's timeline start. Program keyframes use
  * absolute sequence time. `easing` is the curve used to arrive at this key
- * from the previous key of the same property.
+ * from the previous key of the same property. `bezier` is the unit-square
+ * cubic used when `easing` is `bezier`.
  */
 export interface ClipKeyframe {
   id: string;
@@ -141,8 +145,9 @@ export interface ClipKeyframe {
   property: KeyframeProperty;
   value: number;
   easing: EaseCurve;
-  /** Set when `property` is `effect` (blur, brightness, contrast, saturation, volume). */
+  /** Set when `property` is `effect` (blur, brightness, contrast, saturation, hue, exposure, sharpen, volume). */
   effectParam?: string;
+  bezier?: BezierHandles;
 }
 
 export type TimelineTool = 'select' | 'razor' | 'ripple' | 'roll' | 'slip' | 'slide';
@@ -301,6 +306,10 @@ export interface VideoEditorState {
   transition: VideoTransition;
   /** Titles, mixer, grade, LUT, loudness, and the render queue. */
   creative: CreativeState;
+  /** Animated titles and shapes. Independent of clip keyframes. */
+  graphics: MotionDocument;
+  /** Synced camera group. Null when the sequence is a normal timeline. */
+  multicam: MulticamSequence | null;
   /** Absolute path when the file was opened from disk in Electron. */
   sourcePath: string | null;
 }

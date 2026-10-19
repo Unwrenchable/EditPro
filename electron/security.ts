@@ -261,9 +261,11 @@ export function buildContentSecurityPolicy(
   const port = devPortOrDefault(options.devPort);
   const scriptSrc = options.isDev ? "'self' 'unsafe-inline'" : "'self'";
   const styleSrc = options.isDev ? "'self' 'unsafe-inline'" : "'self'";
+  // blob: and media: are same-app preview bytes (imported files and proxy tickets).
+  // Remote hosts stay blocked.
   const connectSrc = options.isDev
-    ? `'self' ws://localhost:${port} http://localhost:${port} ws://127.0.0.1:${port} http://127.0.0.1:${port}`
-    : "'none'";
+    ? `'self' blob: media: ws://localhost:${port} http://localhost:${port} ws://127.0.0.1:${port} http://127.0.0.1:${port}`
+    : 'blob: media:';
 
   const directives = [
     "default-src 'self'",
