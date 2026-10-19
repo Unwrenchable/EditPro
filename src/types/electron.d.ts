@@ -76,6 +76,18 @@ export interface ClientErrorReport {
   source?: string;
 }
 
+export interface AiEvent {
+  jobId: string;
+  type: 'progress' | 'done' | 'cancelled' | 'error';
+  percent?: number;
+  message?: string;
+}
+
+export interface AiSceneHit {
+  time: number;
+  score: number;
+}
+
 export interface EditProBridge {
   openImage(): Promise<string[] | null>;
   openVideo(): Promise<string | null>;
@@ -121,6 +133,10 @@ export interface EditProBridge {
   remindUpdateLater(): Promise<boolean>;
   dismissUpdate(): Promise<boolean>;
   recordClientError(report: ClientErrorReport): Promise<boolean>;
+  aiStatus(): Promise<{ platform: string; arch: string }>;
+  aiCancel(jobId: string): Promise<boolean>;
+  aiDetectScenes(request: { sourcePath: string; threshold: number }): Promise<{ hits: AiSceneHit[] }>;
+  onAiEvent(listener: (event: AiEvent) => void): () => void;
 }
 
 declare global {

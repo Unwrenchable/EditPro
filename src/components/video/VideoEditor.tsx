@@ -170,16 +170,6 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
       transitions: [...without, { ...placed, id: `xfade_${Date.now()}` }],
     });
   }, [editor, state.clips, state.creative]);
-  const handleDetectScenes   = useCallback(() => {
-    // Simulated scene detection: add markers at regular intervals
-    const interval = Math.max(state.duration / 8, 2);
-    let t = interval;
-    while (t < state.duration - 1) {
-      editor.addMarker(Math.round(t * 10) / 10, 'Scene cut', 'green');
-      t += interval;
-    }
-  }, [editor, state.duration]);
-
   // ── Keyboard shortcuts (transport). Timeline tools are handled in ProTimeline.
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -429,7 +419,6 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
           setExportSeed(prefs);
           setShowExportModal(true);
         }}
-        onDetectScenes={handleDetectScenes}
         transition={state.transition}
         onTransitionChange={editor.setTransition}
         creative={state.creative}

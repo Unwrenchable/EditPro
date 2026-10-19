@@ -1011,6 +1011,13 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     [videoRef],
   );
 
+  const applyVideoEdit = useCallback((edit: (snap: VideoEditSnapshot) => VideoEditSnapshot) => {
+    setModel((prev) => commitVideo(prev, (snap) => {
+      const next = edit(snap);
+      return { ...next, creative: reconcileCreative(snap.creative, snap.clips, next.clips) };
+    }));
+  }, []);
+
   const resetVideo = useCallback((videoUrl: string | null) => {
     resetPlaybackClock(clockRef.current);
     setModel((prev) => {
@@ -1146,6 +1153,7 @@ export function useVideoEditor(videoRef: RefObject<HTMLVideoElement | null>) {
     removeProgramKeyframe,
     setCreative,
     applyMagicPlan,
+    applyVideoEdit,
     resetVideo,
     undo,
     redo,
