@@ -1,22 +1,24 @@
 import { useEffect, useState } from 'react';
-import { prefersCoarseLayout } from './gestures';
+import { getPlatform } from '../platform';
+import { prefersTouchLayout, type LayoutHost } from './gestures';
+
+const NARROW_QUERY = '(max-width: 800px)';
 
 function mediaMatches(query: string): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   return window.matchMedia(query).matches;
 }
 
-/** Phones, tablets, and narrow windows use the simplified timeline. */
+/** Narrow web and Capacitor windows use the simplified timeline. Electron never does. */
 export function useCoarseLayout(): boolean {
-  const [coarse, setCoarse] = useState(() => prefersCoarseLayout(mediaMatches));
+  const kind: LayoutHost = getPlatform().kind;
+  const [touch, setTouch] = useState(() => prefersTouchLayout(kind, mediaMatches));
   useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const queries = [window.matchMedia('(pointer: coarse)'), window.matchMedia('(max-width: 800px)')];
-    const update = () => setCoarse(prefersCoarseLayout(mediaMatches));
-    for (const query of queries) query.addEventListener('change', update);
-    return () => {
-      for (const query of queries) query.removeEventListener('change', update);
-    };
-  }, []);
-  return coarse;
+    if (kind === 'electron' || typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia(NARROW_QUERY);
+    const update = () => setTouch(prefersTouchLayout(kind, mediaMatches));
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, [kind]);
+  return touch;
 }

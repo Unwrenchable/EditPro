@@ -252,6 +252,7 @@
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  min-height: 0;
 }
 
 /* ── Drop Zone ──────────────────────────────────────────────────────────── */
@@ -364,15 +365,17 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 
 .video-container {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   padding: 16px 16px 0;
+  min-height: 96px;
 }
 
 .playback-stage {
@@ -1158,10 +1161,12 @@
 .pro-timeline {
   background: #141414;
   border-top: 1px solid #2a2a2a;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-height: 88px;
   display: flex;
   flex-direction: column;
-  max-height: 520px;
+  max-height: min(520px, 40vh);
+  overflow: auto;
 }
 .pro-timeline-empty {
   padding: 12px 16px;
@@ -3058,13 +3063,44 @@
   margin: 4px 0;
 }
 
-/* Phones, tablets, and narrow windows stack the editor and enlarge hit targets. */
-@media (max-width: 800px), (pointer: coarse) {
-  .editor-layout {
+/* Short desktop windows keep one monitor panel open so the rest cannot cover the timeline. */
+.editor-dock {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 180px;
+  min-height: 0;
+  max-height: 180px;
+  border-top: 1px solid #2a2a2a;
+  background: #141414;
+  overflow: hidden;
+}
+
+.editor-dock-tabs {
+  flex-shrink: 0;
+}
+
+.editor-dock-body {
+  overflow: auto;
+  min-height: 0;
+}
+
+.editor-dock-body .multicam-panel,
+.editor-dock-body .motion-panel,
+.editor-dock-body .video-scopes-panel,
+.editor-dock-body .interchange-panel {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Narrow browser and Capacitor windows stack the editor. Desktop Electron never matches. */
+@media (max-width: 800px) {
+  html:not([data-host='electron']) .editor-layout {
     flex-direction: column;
   }
 
-  .right-panel {
+  html:not([data-host='electron']) .right-panel {
     width: 100%;
     min-width: 0;
     max-height: 42vh;
@@ -3072,12 +3108,16 @@
     border-top: 1px solid #2a2a2a;
   }
 
-  .editor-layout-touch {
+  html:not([data-host='electron']) .editor-dock {
+    max-height: 150px;
+  }
+
+  html:not([data-host='electron']) .editor-layout-touch {
     padding-bottom: env(safe-area-inset-bottom);
   }
 
-  .editor-layout-touch button,
-  .editor-layout-touch input[type='range'] {
+  html:not([data-host='electron']) .editor-layout-touch button,
+  html:not([data-host='electron']) .editor-layout-touch input[type='range'] {
     min-height: 44px;
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampZoom, pinchScale, pointerDistance, prefersCoarseLayout, seekRatio } from './gestures';
+import { clampZoom, pinchScale, pointerDistance, prefersTouchLayout, seekRatio } from './gestures';
 
 describe('timeline gestures', () => {
   it('maps a pointer to a 0–1 position on the seek track', () => {
@@ -17,10 +17,15 @@ describe('timeline gestures', () => {
     expect(clampZoom(Number.NaN)).toBe(1);
   });
 
-  it('treats a coarse pointer or a narrow window as the touch layout', () => {
-    const matches = (query: string) => query === '(pointer: coarse)';
-    expect(prefersCoarseLayout(matches)).toBe(true);
-    expect(prefersCoarseLayout((query) => query === '(max-width: 800px)')).toBe(true);
-    expect(prefersCoarseLayout(() => false)).toBe(false);
+  it('uses the touch layout only for a narrow web or Capacitor window', () => {
+    const narrow = (query: string) => query === '(max-width: 800px)';
+    const coarse = (query: string) => query === '(pointer: coarse)';
+    expect(prefersTouchLayout('web', narrow)).toBe(true);
+    expect(prefersTouchLayout('capacitor', narrow)).toBe(true);
+    expect(prefersTouchLayout('web', coarse)).toBe(false);
+    expect(prefersTouchLayout('capacitor', coarse)).toBe(false);
+    expect(prefersTouchLayout('electron', narrow)).toBe(false);
+    expect(prefersTouchLayout('electron', coarse)).toBe(false);
+    expect(prefersTouchLayout('web', () => false)).toBe(false);
   });
 });

@@ -30,6 +30,7 @@ import MotionGraphicsPanel from './MotionGraphicsPanel';
 import MulticamPanel from './MulticamPanel';
 import { fileMediaPath } from '../../utils/mediaFiles';
 import InterchangePanel from './InterchangePanel';
+import EditorDock, { type DockTab } from './EditorDock';
 import type { MagicMoviePlan, VideoEditorState, VideoExportOptions } from '../../types';
 
 function previewLook(state: VideoEditorState, baseFilter: string): {
@@ -92,6 +93,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gpuCanvasRef = useRef<HTMLCanvasElement>(null);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [dockTab, setDockTab] = useState<DockTab>('multicam');
   const [exportSeed, setExportSeed] = useState<{ platform: VideoExportOptions['platform']; quality: number }>({
     platform: 'youtube',
     quality: 90,
@@ -336,30 +338,6 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
               onCancelProxy={proxy.cancel}
             />
 
-            <MulticamPanel
-              sequence={state.multicam}
-              currentTime={state.currentTime}
-              isPlaying={state.isPlaying}
-              duration={state.duration}
-              frameRate={30}
-              mediaPath={state.mediaPath}
-              mediaName={state.mediaName}
-              mediaMissing={state.mediaMissing}
-              programUrl={state.videoUrl}
-              advice={proxy.advice}
-              onChange={editor.setMulticam}
-              onCommit={editor.commitMulticamCuts}
-              onRelinkFile={(file) => {
-                editor.setMedia({
-                  file,
-                  url: URL.createObjectURL(file),
-                  path: window.editpro?.getPathForFile(file) || fileMediaPath(file),
-                  name: file.name,
-                  missing: false,
-                });
-              }}
-            />
-
             {/* ── Transport controls ── */}
             <VideoControls
               isPlaying={state.isPlaying}
@@ -379,23 +357,61 @@ const VideoEditor: React.FC<VideoEditorProps> = ({
               onAddMarker={handleAddMarker}
             />
 
-            {/* ── Video Scopes ── */}
-            <VideoScopesPanel videoRef={videoRef} />
-            <MotionGraphicsPanel
-              document={state.graphics}
-              currentTime={state.currentTime}
-              disabled={!state.videoUrl}
-              onChange={editor.setGraphics}
-            />
+            <EditorDock active={dockTab} onChange={setDockTab}>
+              {dockTab === 'multicam' && (
+                <MulticamPanel
+                  sequence={state.multicam}
+                  currentTime={state.currentTime}
+                  isPlaying={state.isPlaying}
+                  duration={state.duration}
+                  frameRate={30}
+                  mediaPath={state.mediaPath}
+                  mediaName={state.mediaName}
+                  mediaMissing={state.mediaMissing}
+                  programUrl={state.videoUrl}
+                  advice={proxy.advice}
+                  onChange={editor.setMulticam}
+                  onCommit={editor.commitMulticamCuts}
+                  onRelinkFile={(file) => {
+                    editor.setMedia({
+                      file,
+                      url: URL.createObjectURL(file),
+                      path: window.editpro?.getPathForFile(file) || fileMediaPath(file),
+                      name: file.name,
+                      missing: false,
+                    });
+                  }}
+                />
+              )}
+              {dockTab === 'scopes' && <VideoScopesPanel videoRef={videoRef} />}
+              {dockTab === 'titles' && (
+                <MotionGraphicsPanel
+                  document={state.graphics}
+                  currentTime={state.currentTime}
+                  disabled={!state.videoUrl}
+                  onChange={editor.setGraphics}
+                />
+              )}
+              {dockTab === 'exchange' && (
+                <InterchangePanel
+                  tracks={state.tracks}
+                  clips={state.clips}
+                  sequenceName={state.mediaName?.replace(/\.[^.]+$/, '') || 'Sequence'}
+                  onReplace={editor.replaceTimeline}
+                />
+              )}
+            </EditorDock>
           </div>
         )}
 
-        <InterchangePanel
-          tracks={state.tracks}
-          clips={state.clips}
-          sequenceName={state.mediaName?.replace(/\.[^.]+$/, '') || 'Sequence'}
-          onReplace={editor.replaceTimeline}
-        />
+        {!state.videoUrl && (
+          <InterchangePanel
+            tracks={state.tracks}
+            clips={state.clips}
+            sequenceName={state.mediaName?.replace(/\.[^.]+$/, '') || 'Sequence'}
+            onReplace={editor.replaceTimeline}
+          />
+        )}
 
         {coarse ? (
           <TouchTimeline
