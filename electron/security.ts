@@ -58,15 +58,21 @@ export function canonicalizePath(filePath: unknown): string {
 }
 
 /**
- * Remembers paths the user confirmed in open/save dialogs.
- * Read and write grants are separate, and a write grant is single-use.
+ * Remembers paths the user confirmed in open/save dialogs or by picking a file.
+ * Read grants stay until the window closes. Image writes consume a write grant.
+ * Project saves and video export reuse the write grant for the path the user chose.
+ * Ephemeral reads (export temp files) are not included in snapshots.
  */
 export class FileAccessGrants {
   private readonly readPaths = new Set<string>();
   private readonly writePaths = new Set<string>();
+  private readonly ephemeralReads = new Set<string>();
 
-  grantRead(filePath: string): void {
-    this.readPaths.add(canonicalizePath(filePath));
+  grantRead(filePath: string, options?: { ephemeral?: boolean }): void {
+    const canonical = canonicalizePath(filePath);
+    this.readPaths.add(canonical);
+    if (options?.ephemeral) this.ephemeralReads.add(canonical);
+    else this.ephemeralReads.delete(canonical);
   }
 
   grantWrite(filePath: string): void {
@@ -76,6 +82,7 @@ export class FileAccessGrants {
   clear(): void {
     this.readPaths.clear();
     this.writePaths.clear();
+    this.ephemeralReads.clear();
   }
 
   assertCanRead(filePath: unknown): string {
@@ -84,6 +91,39 @@ export class FileAccessGrants {
       throw new Error('Refusing to read a path that was not chosen in an open dialog');
     }
     return canonical;
+  }
+
+  /** Write grant that stays in place so the same chosen path can be saved again. */
+  assertCanWrite(filePath: unknown): string {
+    const canonical = canonicalizePath(filePath);
+    if (!this.writePaths.has(canonical)) {
+      throw new Error('Refusing to write a path that was not chosen in a save dialog');
+    }
+    return canonical;
+  }
+
+  hasRead(filePath: unknown): boolean {
+    try {
+      return this.readPaths.has(canonicalizePath(filePath));
+    } catch {
+      return false;
+    }
+  }
+
+  hasWrite(filePath: unknown): boolean {
+    try {
+      return this.writePaths.has(canonicalizePath(filePath));
+    } catch {
+      return false;
+    }
+  }
+
+  /** Persisted allowlist. Temp export files are omitted. */
+  snapshot(): { read: string[]; write: string[] } {
+    return {
+      read: [...this.readPaths].filter((entry) => !this.ephemeralReads.has(entry)),
+      write: [...this.writePaths],
+    };
   }
 
   /** Returns the canonical path and removes the grant so it cannot be reused. */
@@ -96,9 +136,18 @@ export class FileAccessGrants {
   }
 }
 
+/**
+ * True when `candidate` is a file or directory strictly inside `root`.
+ * Comparison uses the same lexical canonical path as the grant set.
+ */
+export function isPathInside(root: string, candidate: string): boolean {
+  const rootCanonical = canonicalizePath(root);
+  const candidateCanonical = canonicalizePath(candidate);
+  return candidateCanonical.startsWith(`${rootCanonical}${path.sep}`);
+}
+
 /** Keep the save dialog from suggesting a path the renderer invented. */
-export function sanitizeSaveFileName(name: unknown): string {
-  const fallback = 'editpro-export.png';
+export function sanitizeSaveFileName(name: unknown, fallback = 'editpro-export.png'): string {
   if (typeof name !== 'string') return fallback;
   const normalized = name.replaceAll('\\', '/');
   const base = path.basename(normalized);
@@ -330,4 +379,60 @@ const READ_MIME_BY_EXT: Record<string, string> = {
 export function mimeTypeForRead(filePath: string): string {
   const ext = path.extname(filePath).slice(1).toLowerCase();
   return READ_MIME_BY_EXT[ext] ?? 'application/octet-stream';
+}
+
+function isSafeRelativeMediaPath(relativePath: string): boolean {
+  if (relativePath.includes('\0') || hasControlCharacters(relativePath)) return false;
+  if (path.isAbsolute(relativePath) || /^[a-zA-Z]:/.test(relativePath)) return false;
+  const parts = relativePath.split(/[/\\]/);
+  return parts.length > 0 && parts.every((part) => part.length > 0 && part !== '.' && part !== '..');
+}
+
+/**
+ * Media paths named by an .editpro project that stay inside the project directory.
+ * Absolute paths outside that directory are ignored so a project file cannot
+ * grant reads of arbitrary locations. Those files are granted when the user
+ * imports or relinks them.
+ */
+export function mediaPathsInsideDirectory(projectFilePath: string, contents: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== 'object') return [];
+  const media = (parsed as { media?: unknown }).media;
+  if (!Array.isArray(media)) return [];
+
+  let projectDir: string;
+  try {
+    projectDir = path.dirname(canonicalizePath(projectFilePath));
+  } catch {
+    return [];
+  }
+
+  const granted: string[] = [];
+  const seen = new Set<string>();
+  const add = (candidate: string) => {
+    try {
+      if (!isPathInside(projectDir, candidate)) return;
+      const canonical = canonicalizePath(candidate);
+      if (seen.has(canonical)) return;
+      seen.add(canonical);
+      granted.push(canonical);
+    } catch {
+      // Skip malformed paths.
+    }
+  };
+
+  for (const entry of media) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as { path?: unknown; relativePath?: unknown };
+    if (typeof record.path === 'string' && record.path) add(record.path);
+    if (typeof record.relativePath === 'string' && isSafeRelativeMediaPath(record.relativePath)) {
+      add(path.resolve(projectDir, record.relativePath));
+    }
+  }
+  return granted;
 }

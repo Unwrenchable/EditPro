@@ -9,8 +9,10 @@ import {
   decodeImageDataUrl,
   isAllowedAppNavigation,
   isNavigationAllowed,
+  isPathInside,
   isTrustedIpcFrame,
   isTrustedIpcOrigin,
+  mediaPathsInsideDirectory,
   parseAllowedExternalUrl,
   resolveAppStaticPath,
   sanitizeSaveFileName,
@@ -51,11 +53,60 @@ describe('FileAccessGrants', () => {
     expect(() => grants.consumeWrite(destination)).toThrow(/save dialog/);
   });
 
+  it('keeps a write grant for repeated project saves', () => {
+    const grants = new FileAccessGrants();
+    const destination = path.resolve('/tmp/editpro/Cut.editpro');
+    grants.grantWrite(destination);
+    expect(grants.assertCanWrite(destination)).toBe(canonicalizePath(destination));
+    expect(grants.assertCanWrite(destination)).toBe(canonicalizePath(destination));
+  });
+
+  it('omits ephemeral export temp files from the persisted snapshot', () => {
+    const grants = new FileAccessGrants();
+    const picked = path.resolve('/tmp/editpro/clip.mp4');
+    const temp = path.resolve('/tmp/editpro-export/clip.mp4');
+    grants.grantRead(picked);
+    grants.grantRead(temp, { ephemeral: true });
+    grants.grantWrite(path.resolve('/tmp/editpro/out.mp4'));
+    expect(grants.snapshot()).toEqual({
+      read: [canonicalizePath(picked)],
+      write: [canonicalizePath(path.resolve('/tmp/editpro/out.mp4'))],
+    });
+    expect(grants.hasRead(temp)).toBe(true);
+  });
+
   it('rejects non-strings, empty paths, and NUL bytes', () => {
     const grants = new FileAccessGrants();
     expect(() => grants.assertCanRead(null)).toThrow(/string/);
     expect(() => grants.assertCanRead('')).toThrow(/Invalid path/);
     expect(() => grants.assertCanRead('/tmp/a\0.png')).toThrow(/Invalid path/);
+  });
+});
+
+describe('path containment for export and projects', () => {
+  it('treats the export temp directory as a container and rejects traversal', () => {
+    const root = path.resolve('/tmp/editpro-export');
+    const inside = path.join(root, 'clip.mp4');
+    expect(isPathInside(root, inside)).toBe(true);
+    expect(isPathInside(root, root)).toBe(false);
+    expect(isPathInside(root, path.resolve('/tmp/editpro-export-other/clip.mp4'))).toBe(false);
+    expect(isPathInside(root, path.join(root, '..', 'passwd'))).toBe(false);
+  });
+
+  it('grants only media that stays beside the project file', () => {
+    const project = path.resolve('/tmp/editpro/demo/Cut.editpro');
+    const contents = JSON.stringify({
+      media: [
+        { path: path.resolve('/tmp/editpro/demo/a.mp4'), relativePath: 'nested/b.png' },
+        { path: path.resolve('/etc/passwd'), relativePath: '../../etc/passwd' },
+        { path: '', relativePath: '/etc/passwd' },
+      ],
+    });
+    expect(mediaPathsInsideDirectory(project, contents)).toEqual([
+      canonicalizePath(path.resolve('/tmp/editpro/demo/a.mp4')),
+      canonicalizePath(path.resolve('/tmp/editpro/demo/nested/b.png')),
+    ]);
+    expect(mediaPathsInsideDirectory(project, 'not json')).toEqual([]);
   });
 });
 

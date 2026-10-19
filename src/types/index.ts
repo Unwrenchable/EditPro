@@ -218,6 +218,11 @@ export interface CropRect {
 export interface PhotoEditorState {
   file: File | null;
   imageUrl: string | null;
+  /** Native path of the source image, when it was opened from disk. */
+  mediaPath: string | null;
+  mediaName: string | null;
+  /** True when a project references a file that could not be read. */
+  mediaMissing: boolean;
   adjustments: PhotoAdjustments;
   filter: PhotoFilterName;
   rotation: number;
@@ -230,6 +235,11 @@ export interface PhotoEditorState {
 export interface VideoEditorState {
   file: File | null;
   videoUrl: string | null;
+  /** Native path of the source video, when it was opened from disk. */
+  mediaPath: string | null;
+  mediaName: string | null;
+  /** True when a project references a file that could not be read. */
+  mediaMissing: boolean;
   duration: number;
   currentTime: number;
   isPlaying: boolean;

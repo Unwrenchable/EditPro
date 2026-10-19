@@ -1,17 +1,21 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeTheme, protocol, session } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   APP_ORIGIN,
   APP_SCHEME,
   FileAccessGrants,
   buildContentSecurityPolicy,
+  canonicalizePath,
   contentTypeForPath,
   decodeImageDataUrl,
   isDevToolsUrl,
   isNavigationAllowed,
+  isPathInside,
   isTrustedIpcFrame,
+  mediaPathsInsideDirectory,
   mimeTypeForRead,
   parseAllowedExternalUrl,
   resolveAppStaticPath,
@@ -55,7 +59,10 @@ function navigationOptions(): NavigationOptions {
   return { isDev, devPort: devServerPort() };
 }
 
-function assertTrustedIpcSender(event: Electron.IpcMainInvokeEvent): void {
+function assertTrustedIpcSender(event: {
+  sender: Electron.WebContents;
+  senderFrame: Electron.WebFrameMain | null;
+}): void {
   const frame = event.senderFrame;
   const trusted =
     !event.sender.isDestroyed() &&
@@ -155,6 +162,7 @@ function installNavigationGuards(): void {
 }
 
 function createWindow() {
+  restoreGrants();
   nativeTheme.themeSource = 'dark';
 
   mainWindow = new BrowserWindow({
@@ -191,6 +199,14 @@ function createWindow() {
     console.error(`EditPro failed to load ${url}: ${code} ${description}`);
   });
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.alt || input.shift || input.isComposing) return;
+    if (!(input.control || input.meta)) return;
+    if (input.key.toLowerCase() !== 'y') return;
+    event.preventDefault();
+    mainWindow?.webContents.send('menu:redo');
+  });
+
   if (isDev) {
     void mainWindow.loadURL(`http://localhost:${devServerPort()}`);
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -221,6 +237,7 @@ app.whenReady().then(() => {
   installContentSecurityPolicy();
   installPermissionHandlers();
   installNavigationGuards();
+  bootSession();
   buildApplicationMenu();
   createWindow();
 
@@ -235,6 +252,12 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   cancelAllExports();
+  try {
+    const meta = readMetaSync();
+    writeMetaSync({ ...meta, unclean: false });
+  } catch {
+    // Quitting should not be blocked by a session-file failure.
+  }
 });
 
 // ── IPC: File dialogs ────────────────────────────────────────────────────────
@@ -258,6 +281,7 @@ ipcMain.handle('dialog:openImage', async (event) => {
   });
   if (canceled || filePaths.length === 0) return null;
   for (const filePath of filePaths) fileGrants.grantRead(filePath);
+  persistGrants();
   return filePaths;
 });
 
@@ -276,6 +300,7 @@ ipcMain.handle('dialog:openVideo', async (event) => {
   });
   if (canceled || filePaths.length === 0) return null;
   fileGrants.grantRead(filePaths[0]);
+  persistGrants();
   return filePaths[0];
 });
 
@@ -295,6 +320,7 @@ ipcMain.handle('dialog:saveImage', async (event, defaultName: unknown) => {
   });
   if (canceled || !filePath) return null;
   fileGrants.grantWrite(filePath);
+  persistGrants();
   return filePath;
 });
 
@@ -324,26 +350,40 @@ ipcMain.handle('fs:writeDataUrlToFile', async (event, filePath: unknown, dataUrl
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
   await fs.writeFile(allowed, bytes);
+  persistGrants();
   return true;
 });
 
+function videoSaveName(name: unknown): { fileName: string; ext: 'mp4' | 'webm' | 'mov' } {
+  const fallback = 'editpro-export.mp4';
+  const base = sanitizeSaveFileName(name, fallback);
+  const ext = path.extname(base).slice(1).toLowerCase();
+  if (ext === 'webm' || ext === 'mov' || ext === 'mp4') {
+    return { fileName: base, ext };
+  }
+  return { fileName: fallback, ext: 'mp4' };
+}
+
 /** Save an exported video */
-ipcMain.handle('dialog:saveVideo', async (_event, defaultName: string) => {
-  if (!mainWindow) return null;
-  const safeName = typeof defaultName === 'string' && defaultName.trim() ? defaultName : 'editpro-export.mp4';
-  const ext = path.extname(safeName).slice(1).toLowerCase();
+ipcMain.handle('dialog:saveVideo', async (event, defaultName: unknown) => {
+  assertTrustedIpcSender(event);
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  if (!parent) return null;
+  const { fileName, ext } = videoSaveName(defaultName);
   const filters =
     ext === 'webm'
       ? [{ name: 'WebM Video', extensions: ['webm'] }]
       : ext === 'mov'
         ? [{ name: 'QuickTime Movie', extensions: ['mov'] }]
         : [{ name: 'MP4 Video (H.264)', extensions: ['mp4'] }];
-  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+  const { canceled, filePath } = await dialog.showSaveDialog(parent, {
     title: 'Export Video',
-    defaultPath: safeName,
+    defaultPath: fileName,
     filters,
   });
   if (canceled || !filePath) return null;
+  fileGrants.grantWrite(filePath);
+  persistGrants();
   return filePath;
 });
 
@@ -353,14 +393,46 @@ function exportErrorMessage(error: unknown): string {
   return 'Export failed.';
 }
 
+function exportTempRoot(): string {
+  return path.join(app.getPath('temp'), 'editpro-export');
+}
+
 function isTempExportSource(filePath: string): boolean {
-  const root = path.resolve(path.join(app.getPath('temp'), 'editpro-export'));
-  const resolved = path.resolve(filePath);
-  return resolved === root || resolved.startsWith(root + path.sep);
+  try {
+    return isPathInside(exportTempRoot(), filePath);
+  } catch {
+    return false;
+  }
+}
+
+async function assertRegularFileOrMissing(filePath: string): Promise<void> {
+  try {
+    const info = await fs.lstat(filePath);
+    if (info.isDirectory() || info.isSymbolicLink()) {
+      throw new Error('Refusing to write a directory or symbolic link');
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+}
+
+/** ffmpeg may read a granted source or a temp file this process just materialized. */
+async function assertExportInput(filePath: string): Promise<string> {
+  const canonical = canonicalizePath(filePath);
+  const allowed = fileGrants.hasRead(canonical) || isTempExportSource(canonical);
+  if (!allowed) {
+    throw new Error('Refusing to read a video that was not opened in EditPro');
+  }
+  const info = await fs.lstat(canonical);
+  if (!info.isFile()) {
+    throw new Error('A source video was not found. Re-open it from disk and try again.');
+  }
+  return canonical;
 }
 
 /** Copy a renderer File (no disk path) into a temp file ffmpeg can read. */
-ipcMain.handle('export:materializeSource', async (_event, fileName: unknown, bytes: unknown) => {
+ipcMain.handle('export:materializeSource', async (event, fileName: unknown, bytes: unknown) => {
+  assertTrustedIpcSender(event);
   const rawName = typeof fileName === 'string' ? fileName : 'source.mp4';
   const safeName = path.basename(rawName).replace(/[^a-zA-Z0-9._-]/g, '_') || 'source.mp4';
   if (!(bytes instanceof ArrayBuffer) && !ArrayBuffer.isView(bytes)) {
@@ -372,15 +444,17 @@ ipcMain.handle('export:materializeSource', async (_event, fileName: unknown, byt
   if (view.byteLength > maxBytes) {
     throw new Error('This video is too large to copy into the export temp folder. Open it from disk in the desktop app so ffmpeg can read the original file.');
   }
-  const dir = path.join(app.getPath('temp'), 'editpro-export');
+  const dir = exportTempRoot();
   await fs.mkdir(dir, { recursive: true });
   const dest = path.join(dir, `${Date.now()}-${safeName}`);
   await fs.writeFile(dest, view);
+  fileGrants.grantRead(dest, { ephemeral: true });
   return dest;
 });
 
 /** Encode the edit with the bundled ffmpeg binary. Progress arrives on `export:event`. */
 ipcMain.handle('export:start', async (event, payload: unknown) => {
+  assertTrustedIpcSender(event);
   if (hasActiveExport()) {
     throw new Error('An export is already running. Cancel it before starting another.');
   }
@@ -392,10 +466,14 @@ ipcMain.handle('export:start', async (event, payload: unknown) => {
   }
   try {
     try {
-      await fs.access(job.sourcePath);
-      for (const clip of job.clips) await fs.access(clip.sourcePath);
-    } catch {
-      throw new Error('A source video was not found. Re-open it from disk and try again.');
+      job.sourcePath = await assertExportInput(job.sourcePath);
+      for (const clip of job.clips) {
+        clip.sourcePath = await assertExportInput(clip.sourcePath);
+      }
+      job.outputPath = fileGrants.assertCanWrite(job.outputPath);
+      await assertRegularFileOrMissing(job.outputPath);
+    } catch (error) {
+      throw new Error(exportErrorMessage(error));
     }
     let ffmpegPath: string;
     try {
@@ -427,6 +505,10 @@ ipcMain.handle('export:start', async (event, payload: unknown) => {
         percent: result.status === 'done' ? 100 : undefined,
       });
     }
+    if (result.status === 'done') {
+      fileGrants.grantRead(result.outputPath);
+      persistGrants();
+    }
     return result;
   } finally {
     if (isTempExportSource(job.sourcePath)) {
@@ -435,17 +517,42 @@ ipcMain.handle('export:start', async (event, payload: unknown) => {
   }
 });
 
-ipcMain.handle('export:cancel', async (_event, jobId: unknown) => {
+ipcMain.handle('export:cancel', async (event, jobId: unknown) => {
+  assertTrustedIpcSender(event);
   if (typeof jobId !== 'string' || jobId.length === 0) return false;
   cancelExportJob(jobId);
   return true;
 });
 
-/** Reveal an exported file in Explorer, Finder, or the file manager. */
-ipcMain.handle('shell:showItemInFolder', (_event, filePath: unknown) => {
-  if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) return false;
-  shell.showItemInFolder(filePath);
-  return true;
+/** Reveal a file the user opened or exported. */
+ipcMain.handle('shell:showItemInFolder', (event, filePath: unknown) => {
+  assertTrustedIpcSender(event);
+  if (!fileGrants.hasRead(filePath) && !fileGrants.hasWrite(filePath)) return false;
+  try {
+    shell.showItemInFolder(canonicalizePath(filePath));
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+/**
+ * A real File from the renderer file picker or a drop. webUtils.getPathForFile
+ * only resolves OS-backed files, so the preload is the one that sends the path.
+ */
+ipcMain.on('fs:grantPickedFile', (event, filePath: unknown) => {
+  event.returnValue = false;
+  try {
+    assertTrustedIpcSender(event);
+    const canonical = canonicalizePath(filePath);
+    const info = fsSync.statSync(canonical);
+    if (!info.isFile()) return;
+    fileGrants.grantRead(canonical);
+    persistGrants();
+    event.returnValue = true;
+  } catch {
+    event.returnValue = false;
+  }
 });
 
 /** Get app version */
@@ -467,6 +574,359 @@ ipcMain.handle('shell:openExternal', async (event, url: unknown) => {
     throw new Error('Refusing to open a URL that is not https or mailto');
   }
   await openAllowedExternal(url);
+  return true;
+});
+
+// ── Project files, recents, and crash recovery ───────────────────────────────
+// recoveryKind stays in sync with src/utils/sessionStore.ts.
+
+const MAX_TEXT_BYTES = 8_000_000;
+
+interface MainSessionMeta {
+  unclean: boolean;
+  dirty: boolean;
+  projectPath: string | null;
+  autosaveUpdatedAt: string | null;
+  lastSaveAt: string | null;
+  pendingKind: 'crash' | 'autosave' | null;
+}
+
+let launchRecoveryKind: 'crash' | 'autosave' | null = null;
+
+function sessionDirectory(): string {
+  return path.join(app.getPath('userData'), 'editpro-session');
+}
+
+function sessionPath(name: string): string {
+  return path.join(sessionDirectory(), name);
+}
+
+function emptyMeta(): MainSessionMeta {
+  return {
+    unclean: false,
+    dirty: false,
+    projectPath: null,
+    autosaveUpdatedAt: null,
+    lastSaveAt: null,
+    pendingKind: null,
+  };
+}
+
+function recoveryKind(meta: MainSessionMeta, hasAutosave: boolean): 'crash' | 'autosave' | null {
+  if (!hasAutosave || !meta.dirty) return null;
+  return meta.unclean ? 'crash' : 'autosave';
+}
+
+function readMetaSync(): MainSessionMeta {
+  try {
+    const parsed = JSON.parse(fsSync.readFileSync(sessionPath('session.json'), 'utf8')) as Partial<MainSessionMeta>;
+    const pendingKind = parsed.pendingKind === 'crash' || parsed.pendingKind === 'autosave' ? parsed.pendingKind : null;
+    return {
+      unclean: Boolean(parsed.unclean),
+      dirty: Boolean(parsed.dirty),
+      projectPath: typeof parsed.projectPath === 'string' ? parsed.projectPath : null,
+      autosaveUpdatedAt: typeof parsed.autosaveUpdatedAt === 'string' ? parsed.autosaveUpdatedAt : null,
+      lastSaveAt: typeof parsed.lastSaveAt === 'string' ? parsed.lastSaveAt : null,
+      pendingKind,
+    };
+  } catch {
+    return emptyMeta();
+  }
+}
+
+function writeMetaSync(meta: MainSessionMeta): void {
+  fsSync.mkdirSync(sessionDirectory(), { recursive: true });
+  atomicWriteSync(sessionPath('session.json'), JSON.stringify(meta));
+}
+
+function atomicWriteSync(filePath: string, contents: string): void {
+  const tmp = `${filePath}.${process.pid}.tmp`;
+  fsSync.writeFileSync(tmp, contents, 'utf8');
+  fsSync.renameSync(tmp, filePath);
+}
+
+async function atomicWrite(filePath: string, contents: string): Promise<void> {
+  const tmp = `${filePath}.${process.pid}.tmp`;
+  await fs.writeFile(tmp, contents, 'utf8');
+  await fs.rename(tmp, filePath);
+}
+
+function assertPath(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 4096 || value.includes('\0')) {
+    throw new Error('Invalid file path');
+  }
+  return value;
+}
+
+function assertText(value: unknown): string {
+  if (typeof value !== 'string' || value.length > MAX_TEXT_BYTES) {
+    throw new Error('Invalid file contents');
+  }
+  return value;
+}
+
+function assertProjectPath(value: unknown): string {
+  const filePath = assertPath(value);
+  if (!filePath.toLowerCase().endsWith('.editpro')) {
+    throw new Error('Project files must use the .editpro extension');
+  }
+  return filePath;
+}
+
+function optionalProjectPath(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  return assertPath(value);
+}
+
+/** Only record a project path the user has already been allowed to open or save. */
+function grantedProjectPath(value: unknown): string | null {
+  const filePath = optionalProjectPath(value);
+  if (!filePath) return null;
+  if (!fileGrants.hasRead(filePath) && !fileGrants.hasWrite(filePath)) return null;
+  return canonicalizePath(filePath);
+}
+
+function persistGrants(): void {
+  try {
+    fsSync.mkdirSync(sessionDirectory(), { recursive: true });
+    atomicWriteSync(sessionPath('grants.json'), JSON.stringify(fileGrants.snapshot()));
+  } catch (error) {
+    console.error('EditPro could not persist file grants', error);
+  }
+}
+
+function restoreGrants(): void {
+  try {
+    const parsed = JSON.parse(fsSync.readFileSync(sessionPath('grants.json'), 'utf8')) as {
+      read?: unknown;
+      write?: unknown;
+    };
+    const reads = Array.isArray(parsed.read) ? parsed.read : [];
+    const writes = Array.isArray(parsed.write) ? parsed.write : [];
+    for (const entry of reads) {
+      if (typeof entry !== 'string') continue;
+      try {
+        fileGrants.grantRead(entry);
+      } catch {
+        // Skip a grant the canonicalizer rejects.
+      }
+    }
+    for (const entry of writes) {
+      if (typeof entry !== 'string') continue;
+      try {
+        fileGrants.grantWrite(entry);
+      } catch {
+        // Skip a grant the canonicalizer rejects.
+      }
+    }
+  } catch {
+    // First launch, or the grant file is unreadable.
+  }
+}
+
+function grantProjectMedia(projectPath: string, contents: string): void {
+  for (const mediaPath of mediaPathsInsideDirectory(projectPath, contents)) {
+    fileGrants.grantRead(mediaPath);
+  }
+  persistGrants();
+}
+
+function rememberProjectPath(filePath: string): void {
+  fileGrants.grantRead(filePath);
+  fileGrants.grantWrite(filePath);
+  persistGrants();
+}
+
+function bootSession(): void {
+  try {
+    fsSync.mkdirSync(sessionDirectory(), { recursive: true });
+    restoreGrants();
+    const previous = readMetaSync();
+    let autosave = '';
+    try {
+      autosave = fsSync.readFileSync(sessionPath('autosave.editpro'), 'utf8');
+    } catch {
+      autosave = '';
+    }
+    launchRecoveryKind = recoveryKind(previous, Boolean(autosave.trim()));
+    writeMetaSync({
+      unclean: true,
+      dirty: Boolean(launchRecoveryKind),
+      projectPath: previous.projectPath,
+      autosaveUpdatedAt: previous.autosaveUpdatedAt,
+      lastSaveAt: previous.lastSaveAt,
+      pendingKind: launchRecoveryKind,
+    });
+  } catch (error) {
+    console.error('EditPro session boot failed', error);
+    launchRecoveryKind = null;
+  }
+}
+
+function readRecovery(): {
+  kind: 'crash' | 'autosave';
+  autosave: string;
+  projectPath: string | null;
+  savedAt: string | null;
+} | null {
+  if (!launchRecoveryKind) return null;
+  const meta = readMetaSync();
+  if (!meta.dirty) return null;
+  try {
+    const autosave = fsSync.readFileSync(sessionPath('autosave.editpro'), 'utf8');
+    if (!autosave.trim()) return null;
+    if (meta.projectPath && (fileGrants.hasRead(meta.projectPath) || fileGrants.hasWrite(meta.projectPath))) {
+      grantProjectMedia(meta.projectPath, autosave);
+    }
+    return {
+      kind: launchRecoveryKind,
+      autosave,
+      projectPath: meta.projectPath,
+      savedAt: meta.autosaveUpdatedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function rememberAutosave(contents: string, projectPath: string | null): void {
+  fsSync.mkdirSync(sessionDirectory(), { recursive: true });
+  atomicWriteSync(sessionPath('autosave.editpro'), contents);
+  const meta = readMetaSync();
+  writeMetaSync({
+    ...meta,
+    unclean: true,
+    dirty: true,
+    projectPath,
+    autosaveUpdatedAt: new Date().toISOString(),
+  });
+}
+
+function projectSaveName(name: unknown): string {
+  const base = sanitizeSaveFileName(name, 'Untitled.editpro');
+  return base.toLowerCase().endsWith('.editpro') ? base : `${base}.editpro`;
+}
+
+ipcMain.handle('dialog:openProject', async (event) => {
+  assertTrustedIpcSender(event);
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  if (!parent) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(parent, {
+    title: 'Open EditPro Project',
+    filters: [
+      { name: 'EditPro Project', extensions: ['editpro'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  });
+  if (canceled || filePaths.length === 0) return null;
+  rememberProjectPath(filePaths[0]);
+  return filePaths[0];
+});
+
+ipcMain.handle('dialog:saveProject', async (event, defaultName: unknown) => {
+  assertTrustedIpcSender(event);
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  if (!parent) return null;
+  const suggested = projectSaveName(defaultName);
+  const { canceled, filePath } = await dialog.showSaveDialog(parent, {
+    title: 'Save EditPro Project',
+    defaultPath: suggested,
+    filters: [{ name: 'EditPro Project', extensions: ['editpro'] }],
+  });
+  if (canceled || !filePath) return null;
+  const destination = filePath.toLowerCase().endsWith('.editpro') ? filePath : `${filePath}.editpro`;
+  rememberProjectPath(destination);
+  return destination;
+});
+
+ipcMain.handle('fs:readTextFile', async (event, filePath: unknown) => {
+  assertTrustedIpcSender(event);
+  const allowed = fileGrants.assertCanRead(filePath);
+  const info = await fs.lstat(allowed);
+  if (!info.isFile()) throw new Error('Refusing to read a path that is not a file');
+  const contents = await fs.readFile(allowed, 'utf8');
+  if (allowed.toLowerCase().endsWith('.editpro')) grantProjectMedia(allowed, contents);
+  return contents;
+});
+
+ipcMain.handle('fs:writeTextFile', async (event, filePath: unknown, contents: unknown) => {
+  assertTrustedIpcSender(event);
+  const text = assertText(contents);
+  const allowed = fileGrants.assertCanWrite(assertProjectPath(filePath));
+  await assertRegularFileOrMissing(allowed);
+  await atomicWrite(allowed, text);
+  fileGrants.grantRead(allowed);
+  grantProjectMedia(allowed, text);
+  return true;
+});
+
+ipcMain.handle('recent:read', async (event) => {
+  assertTrustedIpcSender(event);
+  try {
+    return await fs.readFile(sessionPath('recent.json'), 'utf8');
+  } catch {
+    return '[]';
+  }
+});
+
+ipcMain.handle('recent:write', async (event, contents: unknown) => {
+  assertTrustedIpcSender(event);
+  const text = assertText(contents);
+  JSON.parse(text);
+  fsSync.mkdirSync(sessionDirectory(), { recursive: true });
+  await atomicWrite(sessionPath('recent.json'), text);
+  return true;
+});
+
+ipcMain.handle('session:getRecovery', (event) => {
+  assertTrustedIpcSender(event);
+  return readRecovery();
+});
+
+ipcMain.handle('session:autosave', async (event, contents: unknown, projectPath: unknown) => {
+  assertTrustedIpcSender(event);
+  rememberAutosave(assertText(contents), grantedProjectPath(projectPath));
+  return true;
+});
+
+ipcMain.on('session:autosaveSync', (event, contents: unknown, projectPath: unknown) => {
+  try {
+    assertTrustedIpcSender(event);
+    rememberAutosave(assertText(contents), grantedProjectPath(projectPath));
+    event.returnValue = true;
+  } catch {
+    event.returnValue = false;
+  }
+});
+
+ipcMain.handle('session:noteSaved', (event, projectPath: unknown) => {
+  assertTrustedIpcSender(event);
+  const allowed = grantedProjectPath(projectPath);
+  if (!allowed) throw new Error('Refusing to record a project path that was not opened or saved');
+  const meta = readMetaSync();
+  writeMetaSync({
+    ...meta,
+    dirty: false,
+    projectPath: allowed,
+    lastSaveAt: new Date().toISOString(),
+  });
+  return true;
+});
+
+ipcMain.handle('session:discardRecovery', async (event) => {
+  assertTrustedIpcSender(event);
+  await fs.rm(sessionPath('autosave.editpro'), { force: true });
+  const meta = readMetaSync();
+  writeMetaSync({ ...meta, dirty: false, autosaveUpdatedAt: null, pendingKind: null });
+  launchRecoveryKind = null;
+  return true;
+});
+
+ipcMain.handle('session:markClean', (event) => {
+  assertTrustedIpcSender(event);
+  const meta = readMetaSync();
+  writeMetaSync({ ...meta, unclean: false });
   return true;
 });
 
@@ -501,12 +961,28 @@ function buildApplicationMenu() {
       label: '&File',
       submenu: [
         {
-          label: 'Open Image…',
+          label: 'Open Project…',
           accelerator: 'CmdOrCtrl+O',
+          click: () => mainWindow?.webContents.send('menu:openProject'),
+        },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => mainWindow?.webContents.send('menu:save'),
+        },
+        {
+          label: 'Save As…',
+          accelerator: 'CmdOrCtrl+Shift+S',
+          click: () => mainWindow?.webContents.send('menu:saveAs'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Import Image…',
+          accelerator: 'CmdOrCtrl+I',
           click: () => mainWindow?.webContents.send('menu:openImage'),
         },
         {
-          label: 'Open Video…',
+          label: 'Import Video…',
           accelerator: 'CmdOrCtrl+Shift+O',
           click: () => mainWindow?.webContents.send('menu:openVideo'),
         },
@@ -525,8 +1001,16 @@ function buildApplicationMenu() {
     {
       label: '&Edit',
       submenu: [
-        { role: 'undo' as const },
-        { role: 'redo' as const },
+        {
+          label: 'Undo',
+          accelerator: 'CmdOrCtrl+Z',
+          click: () => mainWindow?.webContents.send('menu:undo'),
+        },
+        {
+          label: 'Redo',
+          accelerator: 'CmdOrCtrl+Shift+Z',
+          click: () => mainWindow?.webContents.send('menu:redo'),
+        },
         { type: 'separator' as const },
         { role: 'cut' as const },
         { role: 'copy' as const },
