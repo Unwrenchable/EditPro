@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a1a1a" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Download EditPro</title>
+  </head>
+  <body>
+    <main class="download-page">
+      <p class="eyebrow">EditPro</p>
+      <h1>Download EditPro</h1>
+      <p class="lede">Desktop installers come from GitHub Releases. Android can install the APK or the browser app. iPhone and iPad use Add to Home Screen.</p>
+      <p id="download-detected">Detecting this device…</p>
+      <div id="download-cards" class="download-cards"></div>
+      <p id="install-status"></p>
+      <section id="ios-steps" class="download-steps">
+        <h2>Add to Home Screen</h2>
+        <ol id="ios-step-list"></ol>
+      </section>
+      <p><a class="editor-link" href="/">Open the editor</a></p>
+    </main>
+    <script type="module" src="/src/download/page.ts"></script>
+  </body>
+</html>
